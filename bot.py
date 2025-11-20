@@ -35,8 +35,8 @@ def set_bot_commands():
         ("x", "𝕏 推特"),
         ("dc", "💬 Discord"),
         ("threads", "@ Threads"),
-        ("start", "✅ 開啟選單")
-        ("help", "🤖 所有可用指令")
+        ("start", "✅ 開啟選單"),  # 修正：加上逗號
+        ("help", "📋 指令清單")
     ]:
         commands_list.append({"command": cmd, "description": description})
     
@@ -50,7 +50,7 @@ def create_reply_markup():
         [{"text": "🌐 官網網站", "callback_data": "web"},{"text": "📣 社群公告", "callback_data": "announcements"},{"text": "📑 社群規範", "callback_data": "rules"}],
         [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"},{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"},{"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
         [{"text": "𝕏 twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
-        [{"text": "🤖 所有可用指令", "callback_data": "help"}]
+        [{"text": "📋 所有可用指令", "callback_data": "help"}]
     ]
     return {"inline_keyboard": keyboard}
 
@@ -65,11 +65,11 @@ def webhook():
             chat_id = update['message']['chat']['id']
             
             if message_text == '/start':
-                welcome_text = "🤖 10K DOG 官方機器人\n\n請選擇下方按鈕或輸入指令獲取資訊！"
+                welcome_text = "🐾 歡迎使用10K DOG 官方機器人\n請選擇下方按鈕或輸入指令獲取資訊！"
                 send_message(chat_id, welcome_text, create_reply_markup())
                 
             elif message_text == '/help':
-                help_text = "🤖 所有可用指令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
+                help_text = "📋 指令清單：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
                 send_message(chat_id, help_text)
                 
             elif message_text.startswith('/'):
@@ -89,7 +89,7 @@ def webhook():
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
             elif callback_data == 'help':
-                help_text = "🤖 所有可用命令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
+                help_text = "📋 所有可用命令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
                 send_message(chat_id, help_text)
             
             # 回答回調查詢（移除等待狀態）
