@@ -34,7 +34,9 @@ def set_bot_commands():
         ("invitation_code", "🔗 註冊連結"),
         ("x", "𝕏 推特"),
         ("dc", "💬 Discord"),
-        ("threads", "@ Threads")
+        ("threads", "@ Threads"),
+        ("start", "✅ 開啟選單")
+        ("help", "🤖 所有可用指令")
     ]:
         commands_list.append({"command": cmd, "description": description})
     
@@ -48,7 +50,7 @@ def create_reply_markup():
         [{"text": "🌐 官網網站", "callback_data": "web"},{"text": "📣 社群公告", "callback_data": "announcements"},{"text": "📑 社群規範", "callback_data": "rules"}],
         [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"},{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"},{"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
         [{"text": "𝕏 twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
-        [{"text": "📋 所有命令", "callback_data": "help"}]
+        [{"text": "🤖 所有可用指令", "callback_data": "help"}]
     ]
     return {"inline_keyboard": keyboard}
 
@@ -56,7 +58,6 @@ def create_reply_markup():
 def webhook():
     try:
         update = request.get_json()
-        print("Received update:", json.dumps(update, indent=2))  # 除錯用
         
         # 處理一般訊息
         if 'message' in update and 'text' in update['message']:
@@ -64,8 +65,12 @@ def webhook():
             chat_id = update['message']['chat']['id']
             
             if message_text == '/start':
-                welcome_text = "🤖 10K DOG 官方機器人\n\n請選擇下方按鈕或輸入命令："
+                welcome_text = "🤖 10K DOG 官方機器人\n\n請選擇下方按鈕或輸入指令獲取資訊！"
                 send_message(chat_id, welcome_text, create_reply_markup())
+                
+            elif message_text == '/help':
+                help_text = "🤖 所有可用指令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
+                send_message(chat_id, help_text)
                 
             elif message_text.startswith('/'):
                 command = message_text[1:].lower().split(' ')[0]
@@ -73,14 +78,13 @@ def webhook():
                 if command in COMMANDS:
                     send_message(chat_id, COMMANDS[command])
                 else:
-                    help_text = "🤖 可用命令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
-                    send_message(chat_id, help_text, create_reply_markup())
+                    # 未知命令：直接不回應
+                    pass  # 什麼都不做
             
         # 處理按鈕點擊
         elif 'callback_query' in update:
             callback_data = update['callback_query']['data']
             chat_id = update['callback_query']['message']['chat']['id']
-            message_id = update['callback_query']['message']['message_id']
             
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
@@ -105,15 +109,13 @@ def send_message(chat_id, text, reply_markup=None):
     url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
     payload = {
         'chat_id': chat_id,
-        'text': text,
-        'parse_mode': 'HTML'
+        'text': text
     }
     if reply_markup:
         payload['reply_markup'] = json.dumps(reply_markup)
     
     try:
-        response = requests.post(url, json=payload)
-        print("Send message response:", response.json())  # 除錯用
+        requests.post(url, json=payload)
     except Exception as e:
         print(f"發送訊息錯誤：{e}")
 
@@ -134,4 +136,3 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
