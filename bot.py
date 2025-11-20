@@ -65,7 +65,7 @@ def webhook():
             chat_id = update['message']['chat']['id']
             
             if message_text == '/start':
-                welcome_text = "🐾 歡迎使用10K DOG 官方機器人\n請選擇下方按鈕或輸入指令獲取資訊！"
+                welcome_text = "🐾 歡迎使用10K Mark DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
                 send_message(chat_id, welcome_text, create_reply_markup())
                 
             elif message_text == '/help':
@@ -136,3 +136,4 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
