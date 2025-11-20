@@ -7,8 +7,8 @@ app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 
 COMMANDS = {
-    "start": "✅ 開始",
-    "help": "📋 指令清單",
+    "start": "",
+    "help": "",
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
     "announcements": "https://t.me/tenkdogcrypto",
@@ -140,5 +140,6 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
