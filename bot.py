@@ -89,7 +89,7 @@ def webhook():
         elif 'callback_query' in update:
             callback_data = update['callback_query']['data']
             chat_id = update['callback_query']['message']['chat']['id']
-    
+            
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
             elif callback_data == 'help':
@@ -110,8 +110,8 @@ def webhook():
 /threads - @ Threads"""
                 send_message(chat_id, help_text)
     
-        # 回答回調查詢（移除等待狀態）
-        answer_callback_query(update['callback_query']['id'])
+            # 回答回調查詢（移除等待狀態）
+            answer_callback_query(update['callback_query']['id'])
             
         return 'OK'
     except Exception as e:
@@ -154,6 +154,7 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
 
