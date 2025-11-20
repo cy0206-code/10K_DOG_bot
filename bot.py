@@ -47,7 +47,7 @@ def create_reply_markup():
         [{"text": "📜 合約地址", "callback_data": "ca"}],
         [{"text": "🌐 官網網站", "callback_data": "web"},{"text": "📣 社群公告", "callback_data": "announcements"},{"text": "📑 社群規範", "callback_data": "rules"}],
         [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"},{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"},{"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
-        [{"text": "𝕏 twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": threads"}],
+        [{"text": "𝕏 twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
         [{"text": "📋 所有命令", "callback_data": "help"}]
     ]
     return {"inline_keyboard": keyboard}
@@ -134,3 +134,4 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
