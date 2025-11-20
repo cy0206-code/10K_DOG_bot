@@ -7,8 +7,6 @@ app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 
 COMMANDS = {
-    "start": "",
-    "help": "",
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
     "announcements": "https://t.me/tenkdogcrypto",
@@ -71,9 +69,20 @@ def webhook():
                 send_message(chat_id, welcome_text, create_reply_markup())
                 
             elif message_text == '/help':
-                # 包含所有命令，包括 start 和 help
-                all_commands = ["start", "help"] + list(COMMANDS.keys())
-                help_text = "📋 指令清單：\n" + "\n".join([f"/{cmd}" for cmd in all_commands])
+                help_text = """📋 指令清單：
+
+/start - ✅ 開啟選單
+/help - 📋 顯示指令清單
+/ca - 📜 合約地址
+/web - 🌐 官方網站
+/announcements - 📣 社群公告
+/rules - 📑 社群規範
+/jup_lock - 🔐 鎖倉資訊
+/pumpswap - ⛏️ 流動性礦池教學
+/invitation_code - 🔗 註冊連結
+/x - 𝕏 Twitter推特
+/dc - 💬 Discord社群
+/threads - @ Threads"""
                 send_message(chat_id, help_text)
                 
             elif message_text.startswith('/'):
@@ -93,7 +102,6 @@ def webhook():
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
             elif callback_data == 'help':
-                # 顯示完整的指令清單
                 help_text = """📋 所有可用指令：
 
 /start - ✅ 開啟選單
@@ -109,7 +117,7 @@ def webhook():
 /dc - 💬 Discord社群
 /threads - @ Threads"""
                 send_message(chat_id, help_text)
-    
+            
             # 回答回調查詢（移除等待狀態）
             answer_callback_query(update['callback_query']['id'])
             
@@ -154,8 +162,3 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-
-
-
-
