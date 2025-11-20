@@ -8,7 +8,7 @@ app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 
 # 超級管理員 ID（替換為您的 Telegram User ID）
-SUPER_ADMIN = 123456789  # 請替換為您的實際 ID
+SUPER_ADMIN = chanyuen0206  # 請替換為您的實際 ID
 
 # 管理員名單
 ADMINS = {
@@ -417,3 +417,4 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
