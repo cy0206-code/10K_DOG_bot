@@ -7,6 +7,8 @@ app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 
 COMMANDS = {
+    "start": "✅ 開始",
+    "help": "📋 指令清單",
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
     "announcements": "https://t.me/tenkdogcrypto",
@@ -35,7 +37,7 @@ def set_bot_commands():
         ("x", "𝕏 推特"),
         ("dc", "💬 Discord"),
         ("threads", "@ Threads"),
-        ("start", "✅ 開啟選單"),  # 修正：加上逗號
+        ("start", "✅ 開啟選單"),
         ("help", "📋 指令清單")
     ]:
         commands_list.append({"command": cmd, "description": description})
@@ -69,7 +71,9 @@ def webhook():
                 send_message(chat_id, welcome_text, create_reply_markup())
                 
             elif message_text == '/help':
-                help_text = "📋 指令清單：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
+                # 包含所有命令，包括 start 和 help
+                all_commands = ["start", "help"] + list(COMMANDS.keys())
+                help_text = "📋 指令清單：\n" + "\n".join([f"/{cmd}" for cmd in all_commands])
                 send_message(chat_id, help_text)
                 
             elif message_text.startswith('/'):
@@ -136,4 +140,5 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
