@@ -151,18 +151,20 @@ def update_allowed_threads():
     except Exception as e:
         print(f"更新話題錯誤：{e}")
 
-# 權限檢查函數
+# 權限檢查函數 - 修正群組指令問題
 def should_process_message(update, user_id, message_text):
     try:
         chat_id = update['message']['chat']['id']
-        thread_id = update['message'].get('message_thread_id')
+        thread_id = update['message'].get('message_thread_id', 0)
         
-        thread_key = f"{chat_id}_{thread_id if thread_id else 0}"
+        thread_key = f"{chat_id}_{thread_id}"
         
+        # 管理員的管理指令永遠允許
         if (is_admin(user_id) and 
             message_text in ['/admin add_thread', '/admin remove_thread']):
             return True
         
+        # 一般指令需要話題已被允許
         return thread_key in ALLOWED_THREADS
     except Exception as e:
         print(f"權限檢查錯誤：{e}")
@@ -228,11 +230,16 @@ def create_private_admin_markup(user_id):
 # 群組管理指令處理
 def handle_group_admin_command(message_text, chat_id, user_id, update):
     try:
-        thread_id = update['message'].get('message_thread_id')
-        thread_key = f"{chat_id}_{thread_id if thread_id else 0}"
+        thread_id = update['message'].get('message_thread_id', 0)
+        thread_key = f"{chat_id}_{thread_id}"
         
         if message_text == '/admin add_thread':
-            ALLOWED_THREADS[thread_key] = True
+            ALLOWED_THREADS[thread_key] = {
+                "chat_id": chat_id,
+                "thread_id": thread_id,
+                "added_by": user_id,
+                "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat()
+            }
             send_message(chat_id, "✅ 已允許當前話題", None, thread_id)
             log_admin_action(user_id, "add_thread", details=thread_key)
             update_allowed_threads()
@@ -295,17 +302,17 @@ def get_admin_list_with_names():
         print(f"獲取管理員列表錯誤：{e}")
         return "❌ 獲取管理員列表失敗"
 
-# 獲取話題列表
+# 獲取話題列表 - 修正話題名稱顯示
 def get_thread_list_with_names():
     try:
         if not ALLOWED_THREADS:
             return "📋 目前沒有允許的話題"
         
         thread_list = "📋 允許的話題列表：\n\n"
-        for thread_key in ALLOWED_THREADS.keys():
+        for thread_key, thread_info in ALLOWED_THREADS.items():
             try:
-                chat_id, thread_id = thread_key.split('_')
-                thread_id = int(thread_id) if thread_id != '0' else 0
+                chat_id = thread_info.get('chat_id', thread_key.split('_')[0])
+                thread_id = thread_info.get('thread_id', int(thread_key.split('_')[1]))
                 
                 chat_info = get_chat_info(chat_id)
                 chat_title = chat_info.get('title', '未知群組') if chat_info else '未知群組'
@@ -313,9 +320,18 @@ def get_thread_list_with_names():
                 if thread_id == 0:
                     thread_list += f"💬 主聊天室\n🏷️ 群組: {chat_title}\n🔢 識別碼: {thread_key}\n\n"
                 else:
-                    thread_name = get_thread_name(chat_id, thread_id)
+                    # 嘗試獲取話題名稱
+                    thread_name = "未知話題"
+                    try:
+                        forum_topic = get_forum_topic(chat_id, thread_id)
+                        if forum_topic:
+                            thread_name = forum_topic.get('name', '未知話題')
+                    except:
+                        pass
+                    
                     thread_list += f"💬 話題: {thread_name}\n🏷️ 群組: {chat_title}\n🔢 識別碼: {thread_key}\n\n"
-            except:
+            except Exception as e:
+                print(f"處理話題 {thread_key} 錯誤: {e}")
                 thread_list += f"💬 話題\n🔢 識別碼: {thread_key}\n\n"
         
         return thread_list
@@ -347,8 +363,8 @@ def get_chat_info(chat_id):
         print(f"獲取聊天資訊錯誤：{e}")
     return None
 
-# 獲取話題名稱
-def get_thread_name(chat_id, thread_id):
+# 獲取論壇話題資訊
+def get_forum_topic(chat_id, thread_id):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getForumTopic"
         payload = {
@@ -357,10 +373,10 @@ def get_thread_name(chat_id, thread_id):
         }
         response = requests.post(url, json=payload, timeout=5)
         if response.status_code == 200:
-            return response.json().get('result', {}).get('name', '未知話題')
+            return response.json().get('result', {})
     except Exception as e:
-        print(f"獲取話題名稱錯誤：{e}")
-    return '未知話題'
+        print(f"獲取論壇話題錯誤：{e}")
+    return None
 
 # 簡化版本的私聊管理員命令處理
 def handle_private_admin_command(message_text, chat_id, user_id):
@@ -410,22 +426,38 @@ def handle_private_admin_command(message_text, chat_id, user_id):
         print(f"私聊管理員命令錯誤：{e}")
         send_message(chat_id, "❌ 命令處理失敗，請稍後再試")
 
-# 簡化版本的超級管理員命令
+# 超級管理員命令 - 修正操作紀錄顯示
 def handle_super_admin_commands(message_text, chat_id, user_id):
     try:
         if message_text.startswith('/admin logs'):
-            logs = ADMIN_LOGS[-10:]
+            parts = message_text.split(' ')
+            count = int(parts[2]) if len(parts) > 2 else 10
+            
+            logs = ADMIN_LOGS[-count:] if count <= len(ADMIN_LOGS) else ADMIN_LOGS
             if not logs:
                 send_message(chat_id, "📊 目前沒有操作紀錄")
             else:
-                log_text = "📊 最近操作紀錄：\n\n"
+                log_text = "📊 最近管理操作紀錄：\n\n"
+                
                 for log in reversed(logs):
                     try:
                         taiwan_time = datetime.datetime.fromisoformat(log['timestamp']).astimezone(TAIWAN_TZ)
                         time_str = taiwan_time.strftime("%m/%d %H:%M")
-                        log_text += f"⏰ {time_str} | 👤 {log['admin_id']} | {log['action']}\n"
+                        
+                        log_text += f"⏰ 時間: {time_str}\n"
+                        log_text += f"👤 管理員: {log['admin_id']}\n"
+                        log_text += f"📝 操作: {log['action']}\n"
+                        
+                        if log['target_id']:
+                            log_text += f"🎯 目標: {log['target_id']}\n"
+                        
+                        if log['details']:
+                            log_text += f"📋 詳情: {log['details']}\n"
+                        
+                        log_text += "─" * 20 + "\n\n"
                     except:
                         continue
+                
                 send_message(chat_id, log_text)
     except Exception as e:
         print(f"超級管理員命令錯誤：{e}")
@@ -466,12 +498,13 @@ def handle_uid_query(update, chat_id):
         print(f"UID查詢錯誤：{e}")
         send_message(chat_id, "❌ 查詢失敗，請確保轉發的是用戶訊息且隱私設定允許")
 
-# UID 查詢按鈕處理函數
+# UID 查詢按鈕處理函數 - 修正複製功能
 def handle_uid_query_buttons(callback_data, chat_id, user_id):
     try:
         if callback_data.startswith('copy_uid_'):
             uid_to_copy = callback_data.replace('copy_uid_', '')
-            send_message(chat_id, f"📋 請複製以下 UID：\n\n`{uid_to_copy}`")
+            # 只顯示純數字，方便複製
+            send_message(chat_id, uid_to_copy)
             
         elif callback_data.startswith('add_this_user_'):
             if is_super_admin(user_id):
@@ -488,7 +521,7 @@ def handle_uid_query_buttons(callback_data, chat_id, user_id):
         print(f"UID按鈕處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 簡化版本的私聊管理員按鈕處理
+# 私聊管理員按鈕處理 - 修正操作紀錄按鈕
 def handle_private_admin_button(callback_data, chat_id, user_id):
     try:
         if callback_data == 'private_list_admins':
@@ -516,7 +549,8 @@ def handle_private_admin_button(callback_data, chat_id, user_id):
             send_message(chat_id, commands_help)
             
         elif callback_data == 'private_view_logs' and is_super_admin(user_id):
-            handle_super_admin_commands('/admin logs', chat_id, user_id)
+            # 直接顯示操作紀錄
+            handle_super_admin_commands('/admin logs 10', chat_id, user_id)
             
         elif callback_data == 'private_back_to_main':
             send_message(chat_id, "🐾 歡迎使用10K DOG 官方BOT", create_reply_markup())
@@ -551,8 +585,8 @@ def handle_admin_uid_input(message_text, chat_id, user_id):
         print(f"管理員UID輸入處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 一般用戶命令處理
-def handle_user_commands(message_text, chat_id, user_id, is_private):
+# 一般用戶命令處理 - 修正群組指令處理
+def handle_user_commands(message_text, chat_id, user_id, is_private, update=None):
     try:
         if message_text == '/start':
             welcome_text = "🐾 歡迎使用10K DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
@@ -565,6 +599,10 @@ def handle_user_commands(message_text, chat_id, user_id, is_private):
         elif message_text.startswith('/'):
             command = message_text[1:].lower().split(' ')[0]
             if command in COMMANDS:
+                # 在群組中需要檢查話題權限
+                if not is_private:
+                    if not should_process_message(update, user_id, message_text):
+                        return
                 send_message(chat_id, COMMANDS[command])
             else:
                 pass
@@ -618,9 +656,6 @@ def webhook():
             if message_text.startswith('/admin') and not is_admin(user_id):
                 return 'OK'
             
-            if not is_private and not should_process_message(update, user_id, message_text):
-                return 'OK'
-            
             # 管理員命令
             if is_admin(user_id):
                 if is_private:
@@ -640,7 +675,7 @@ def webhook():
             
             # 一般用戶命令
             else:
-                handle_user_commands(message_text, chat_id, user_id, is_private)
+                handle_user_commands(message_text, chat_id, user_id, is_private, update)
         
         return 'OK'
     except Exception as e:
