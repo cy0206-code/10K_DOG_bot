@@ -8,113 +8,117 @@ import pytz
 app = Flask(__name__)
 TOKEN = os.environ.get("BOT_TOKEN")
 SUPER_ADMIN = 8126033106
-GIST_TOKEN = os.environ.get("GIST_TOKEN")  # GitHub Personal Access Token
-GIST_ID = os.environ.get("GIST_ID", "")  # 已有的 Gist ID（可選）
+GIST_TOKEN = os.environ.get("GIST_TOKEN")
+GIST_ID = os.environ.get("GIST_ID", "")
 TAIWAN_TZ = pytz.timezone('Asia/Taipei')
 
-# Gist 檔案名稱
 GIST_FILENAME = "10k_dog_bot_data.json"
+current_gist_id = GIST_ID
 
 # ========== Gist 資料管理 ==========
 def load_data():
-    """從 Gist 載入資料"""
+    global current_gist_id
+    
     if not GIST_TOKEN:
         print("❌ 未設定 GIST_TOKEN，使用記憶體儲存")
         return create_default_data()
     
     try:
-        headers = {
-            'Authorization': f'token {GIST_TOKEN}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
+        headers = {'Authorization': f'token {GIST_TOKEN}'}
         
-        # 如果有 GIST_ID，直接讀取
-        if GIST_ID:
-            url = f'https://api.github.com/gists/{GIST_ID}'
-            response = requests.get(url, headers=headers, timeout=10)
+        # 如果有 GIST_ID，嘗試讀取
+        if current_gist_id:
+            response = requests.get(
+                f'https://api.github.com/gists/{current_gist_id}',
+                headers=headers,
+                timeout=10
+            )
             if response.status_code == 200:
                 gist_data = response.json()
                 content = gist_data['files'][GIST_FILENAME]['content']
                 print("✅ 從 Gist 載入資料成功")
                 return json.loads(content)
+            else:
+                print(f"❌ Gist 讀取失敗: {response.status_code}")
+                current_gist_id = ""  # 重置 Gist ID
         
         # 搜尋現有的 Gist
-        url = 'https://api.github.com/gists'
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(
+            'https://api.github.com/gists',
+            headers=headers,
+            timeout=10
+        )
         if response.status_code == 200:
             gists = response.json()
             for gist in gists:
                 if GIST_FILENAME in gist['files']:
-                    # 設定全域 GIST_ID
-                    global GIST_ID
-                    GIST_ID = gist['id']
+                    current_gist_id = gist['id']
                     content = gist['files'][GIST_FILENAME]['content']
-                    print(f"✅ 找到現有 Gist: {GIST_ID}")
+                    print(f"✅ 找到現有 Gist: {current_gist_id}")
                     return json.loads(content)
         
         # 沒有找到現有 Gist，創建新的
         print("❌ 未找到現有 Gist，創建新資料")
         return create_default_data()
-            
+        
     except Exception as e:
-        print(f"❌ 載入資料錯誤: {e}")
+        print(f"❌ Gist 載入失敗: {e}")
         return create_default_data()
 
-def save_data(data):
-    """儲存資料到 Gist"""
+def save_data(data_to_save):
+    global current_gist_id
+    
     if not GIST_TOKEN:
         print("❌ 未設定 GIST_TOKEN，無法持久化儲存")
         return
     
     try:
-        headers = {
-            'Authorization': f'token {GIST_TOKEN}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
+        headers = {'Authorization': f'token {GIST_TOKEN}'}
+        files = {GIST_FILENAME: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
         
-        # 準備檔案內容
-        files = {
-            GIST_FILENAME: {
-                "content": json.dumps(data, ensure_ascii=False, indent=2)
-            }
-        }
-        
-        # 如果有 GIST_ID，更新現有 Gist
-        if GIST_ID:
-            url = f'https://api.github.com/gists/{GIST_ID}'
-            payload = {"files": files}
-            response = requests.patch(url, headers=headers, json=payload, timeout=10)
+        # 如果有 Gist ID，更新現有 Gist
+        if current_gist_id:
+            response = requests.patch(
+                f'https://api.github.com/gists/{current_gist_id}',
+                headers=headers,
+                json={"files": files},
+                timeout=10
+            )
         else:
             # 創建新 Gist
-            url = 'https://api.github.com/gists'
-            payload = {
-                "public": False,
-                "description": "10K DOG Bot Data Storage",
-                "files": files
-            }
-            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            response = requests.post(
+                'https://api.github.com/gists',
+                headers=headers,
+                json={
+                    "public": False,
+                    "description": "10K DOG Bot Data Storage",
+                    "files": files
+                },
+                timeout=10
+            )
             if response.status_code == 201:
                 gist_data = response.json()
-                global GIST_ID
-                GIST_ID = gist_data['id']
-                print(f"✅ 創建新 Gist: {GIST_ID}")
+                current_gist_id = gist_data['id']
+                print(f"✅ 創建新 Gist: {current_gist_id}")
+            else:
+                print(f"❌ 創建 Gist 失敗: {response.status_code}")
+                return
         
         if response.status_code in [200, 201]:
             print("✅ 資料已儲存至 Gist")
         else:
-            print(f"❌ 儲存失敗: {response.status_code} - {response.text}")
+            print(f"❌ Gist 儲存失敗: {response.status_code} - {response.text}")
             
     except Exception as e:
-        print(f"❌ 儲存錯誤: {e}")
+        print(f"❌ Gist 儲存錯誤: {e}")
 
 def create_default_data():
-    """創建預設資料"""
     default_data = {
         "admins": {str(SUPER_ADMIN): {"added_by": "system", "added_time": datetime.datetime.now().isoformat(), "is_super": True}},
         "allowed_threads": {},
         "admin_logs": []
     }
-    save_data(default_data)  # 立即儲存到 Gist
+    save_data(default_data)
     return default_data
 
 # 初始化資料
@@ -194,6 +198,9 @@ def log_action(admin_id, action, target=None, details=None):
 
 # ========== 權限檢查 ==========
 def should_process(update, user_id, text):
+    if 'message' not in update:
+        return False
+        
     chat_id = update['message']['chat']['id']
     
     # 私聊永遠允許
@@ -334,9 +341,9 @@ def get_admin_list_with_names():
             role = "👑 超級管理員" if admin_info.get('is_super', False) else "👤 管理員"
             
             admin_list += f"{role} - {display_name}\n"
-            admin_list += f"🔢 ID: {admin_id}\n\n"  # 移除反引號
+            admin_list += f"🔢 ID: {admin_id}\n\n"
         except:
-            admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"  # 移除反引號
+            admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"
     
     return admin_list
 
@@ -371,8 +378,8 @@ def send_message(chat_id, text, markup=None, thread_id=None):
         if thread_id: payload['message_thread_id'] = thread_id
         if markup: payload['reply_markup'] = json.dumps(markup)
         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload, timeout=5)
-    except:
-        pass
+    except Exception as e:
+        print(f"傳送訊息錯誤: {e}")
 
 def answer_callback(callback_id):
     try:
@@ -572,50 +579,54 @@ def handle_uid_input(text, chat_id, user_id):
 # ========== 主路由 ==========
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    update = request.get_json()
-    
-    # 處理回調查詢
-    if 'callback_query' in update:
-        cb = update['callback_query']
-        data, chat_id, user_id = cb['data'], cb['message']['chat']['id'], cb['from']['id']
-        thread_id = None if not str(chat_id).startswith('-100') else cb['message'].get('message_thread_id')
+    try:
+        update = request.get_json()
         
-        handle_callback(data, chat_id, user_id, thread_id)
-        answer_callback(cb['id'])
-        return 'OK'
-    
-    # 處理文字訊息
-    if 'message' in update and 'text' in update['message']:
-        msg = update['message']
-        text, chat_id, user_id = msg['text'], msg['chat']['id'], msg['from']['id']
-        is_private = not str(chat_id).startswith('-100')
-        
-        # UID 查詢
-        if 'forward_from' in msg and not text.startswith('/') and is_admin(user_id):
-            handle_uid_query(update, chat_id)
+        # 處理回調查詢
+        if 'callback_query' in update:
+            cb = update['callback_query']
+            data, chat_id, user_id = cb['data'], cb['message']['chat']['id'], cb['from']['id']
+            thread_id = None if not str(chat_id).startswith('-100') else cb['message'].get('message_thread_id')
+            
+            handle_callback(data, chat_id, user_id, thread_id)
+            answer_callback(cb['id'])
             return 'OK'
         
-        # 管理員 UID 輸入處理
-        if is_private and is_admin(user_id) and text.strip().isdigit():
-            handle_uid_input(text, chat_id, user_id)
-            return 'OK'
-        
-        # 權限檢查
-        if not is_private and not should_process(update, user_id, text):
-            return 'OK'
-        
-        # 管理員命令
-        if is_admin(user_id) and text.startswith('/admin'):
-            if is_private:
-                handle_admin_command(text, chat_id, user_id, update)
+        # 處理文字訊息
+        if 'message' in update and 'text' in update['message']:
+            msg = update['message']
+            text, chat_id, user_id = msg['text'], msg['chat']['id'], msg['from']['id']
+            is_private = not str(chat_id).startswith('-100')
+            
+            # UID 查詢
+            if 'forward_from' in msg and not text.startswith('/') and is_admin(user_id):
+                handle_uid_query(update, chat_id)
+                return 'OK'
+            
+            # 管理員 UID 輸入處理
+            if is_private and is_admin(user_id) and text.strip().isdigit():
+                handle_uid_input(text, chat_id, user_id)
+                return 'OK'
+            
+            # 權限檢查
+            if not is_private and not should_process(update, user_id, text):
+                return 'OK'
+            
+            # 管理員命令
+            if is_admin(user_id) and text.startswith('/admin'):
+                if is_private:
+                    handle_admin_command(text, chat_id, user_id, update)
+                else:
+                    handle_group_admin(text, chat_id, user_id, update)
+            
+            # 一般用戶命令
             else:
-                handle_group_admin(text, chat_id, user_id, update)
+                handle_user_command(text, chat_id, is_private, update)
         
-        # 一般用戶命令
-        else:
-            handle_user_command(text, chat_id, is_private, update)
-    
-    return 'OK'
+        return 'OK'
+    except Exception as e:
+        print(f"Webhook 錯誤: {e}")
+        return 'OK'
 
 @app.route('/')
 def home():
