@@ -253,6 +253,7 @@ COMMANDS = {
     "invitation_code": "https://t.me/tenthousandcommunity/10405",
     "x": "https://x.com/10000timesto1",
     "dc": "https://discord.com/invite/10kdog",
+    "ig": "https://www.instagram.com/_10kdog_/?igsh=MWIzNmp3OTBzeGIwdQ%3D%3D#",
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ=="
 }
 
@@ -269,6 +270,7 @@ HELP_TEXT = """📋 指令清單：
 /invitation_code - 🔗 註冊連結
 /x - 𝕏 Twitter推特
 /dc - 💬 Discord社群
+/ig - 🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦
 /threads - @ Threads"""
 
 # ========== 按鈕定義 ==========
@@ -280,7 +282,8 @@ def main_menu():
             [{"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}],
             [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
             [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}],
-            [{"text": "@ Threads", "callback_data": "threads"}, {"text": "📋 所有可用指令", "callback_data": "help"}]
+            [{"text": "🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦", "callback_data": "ig"}, {"text": "@ Threads", "callback_data": "threads"}],
+            [{"text": "📋 所有可用指令", "callback_data": "help"}]
         ]
     }
 
