@@ -87,13 +87,27 @@ def toggle_thread(chat_id, thread_id, add=True):
 
 def log_action(admin_id, action, target=None, details=None):
     logs = get_logs()
-    logs.append({
+    
+    # 獲取管理員名稱
+    admin_info = get_user_info(admin_id)
+    admin_name = get_display_name(admin_info) if admin_info else str(admin_id)
+    
+    log_entry = {
         'timestamp': datetime.datetime.now(TAIWAN_TZ).isoformat(),
         'admin_id': admin_id,
+        'admin_name': admin_name,
         'action': action,
         'target_id': target,
         'details': details
-    })
+    }
+    
+    # 如果有目標ID，也獲取目標名稱
+    if target:
+        target_info = get_user_info(target)
+        if target_info:
+            log_entry['target_name'] = get_display_name(target_info)
+    
+    logs.append(log_entry)
     if len(logs) > 100: logs.pop(0)
     update_data("admin_logs", logs)
 
@@ -147,11 +161,10 @@ def main_menu():
     return {
         "inline_keyboard": [
             [{"text": "📜 合約地址", "callback_data": "ca"}],
-            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}],
-            [{"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}],
-            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
-            [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}],
-            [{"text": "@ Threads", "callback_data": "threads"}, {"text": "📋 所有可用指令", "callback_data": "help"}]
+            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}],
+            [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
+            [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"} ,{"text": "@ Threads", "callback_data": "threads"}],
+            [{"text": "📋 所有可用指令", "callback_data": "help"}]
         ]
     }
 
@@ -179,6 +192,25 @@ def get_user_info(user_id):
     except:
         pass
     return None
+
+def get_display_name(user_info):
+    """從用戶資訊中獲取顯示名稱"""
+    if not user_info:
+        return "未知用戶"
+    
+    first_name = user_info.get('first_name', '')
+    last_name = user_info.get('last_name', '')
+    username = user_info.get('username', '')
+    
+    full_name = f"{first_name} {last_name}".strip()
+    if full_name and username:
+        return f"{full_name} (@{username})"
+    elif full_name:
+        return full_name
+    elif username:
+        return f"@{username}"
+    else:
+        return "未知用戶"
 
 def get_chat_info(chat_id):
     try:
@@ -226,11 +258,11 @@ def get_admin_list_with_names():
                 role = "👑 超級管理員" if admin_info.get('is_super', False) else "👤 管理員"
                 
                 admin_list += f"{role} - {full_name} {username_display}\n"
-                admin_list += f"🔢 ID: `{admin_id}`\n\n"
+                admin_list += f"🔢 ID: {admin_id}\n\n"  # 移除反引號
             else:
-                admin_list += f"👤 未知用戶\n🔢 ID: `{admin_id}`\n\n"
+                admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"  # 移除反引號
         except:
-            admin_list += f"👤 未知用戶\n🔢 ID: `{admin_id}`\n\n"
+            admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"  # 移除反引號
     
     return admin_list
 
@@ -339,9 +371,12 @@ def handle_admin_command(text, chat_id, user_id, update=None):
             msg = "📊 最近操作紀錄：\n\n"
             for log in reversed(logs):
                 time = datetime.datetime.fromisoformat(log['timestamp']).strftime("%m/%d %H:%M")
-                msg += f"⏰ {time} | 👤 {log['admin_id']} | {log['action']}"
-                if log['target_id']: msg += f" → {log['target_id']}"
-                msg += "\n"
+                admin_name = log.get('admin_name', log['admin_id'])
+                action_text = f"{log['action']}"
+                if log['target_id']:
+                    target_name = log.get('target_name', log['target_id'])
+                    action_text += f" → {target_name}"
+                msg += f"⏰ {time} | 👤 {admin_name} | {action_text}\n"
             send_message(chat_id, msg)
 
 def handle_group_admin(text, chat_id, user_id, update):
@@ -362,19 +397,21 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許", None, thread_id)
 
 def handle_user_command(text, chat_id, is_private, update=None):
-    # 修正：所有指令都應該在正確的話題中回覆
+    # 修正：處理帶有 @bot_username 的指令
+    clean_text = text.split('@')[0] if '@' in text else text
+    
     thread_id = None
     if not is_private and update and 'message' in update:
         thread_id = update['message'].get('message_thread_id')
     
-    if text == '/start':
+    if clean_text == '/start':
         send_message(chat_id, "🐾 歡迎使用10K DOG 官方BOT", main_menu(), thread_id)
     
-    elif text == '/help':
+    elif clean_text == '/help':
         send_message(chat_id, HELP_TEXT, None, thread_id)
     
-    elif text.startswith('/'):
-        cmd = text[1:].lower().split(' ')[0]
+    elif clean_text.startswith('/'):
+        cmd = clean_text[1:].lower().split(' ')[0]
         if cmd in COMMANDS:
             send_message(chat_id, COMMANDS[cmd], None, thread_id)
 
@@ -424,9 +461,12 @@ def handle_callback(data, chat_id, user_id, message_thread_id=None):
             msg = "📊 最近操作紀錄：\n\n"
             for log in reversed(logs):
                 time = datetime.datetime.fromisoformat(log['timestamp']).strftime("%m/%d %H:%M")
-                msg += f"⏰ {time} | 👤 {log['admin_id']} | {log['action']}"
-                if log['target_id']: msg += f" → {log['target_id']}"
-                msg += "\n"
+                admin_name = log.get('admin_name', log['admin_id'])
+                action_text = f"{log['action']}"
+                if log['target_id']:
+                    target_name = log.get('target_name', log['target_id'])
+                    action_text += f" → {target_name}"
+                msg += f"⏰ {time} | 👤 {admin_name} | {action_text}\n"
             send_message(chat_id, msg)
     
     elif data.startswith('copy_'):
