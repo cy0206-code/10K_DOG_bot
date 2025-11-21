@@ -296,7 +296,7 @@ def main_menu():
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
             [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}],
             [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
-            [{"text": "🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦", "callback_data": "ig"}, {"text": "🎬 YouTube頻道", "callback_data": "yt"}, {"text": "📋 指令清單", "callback_data": "help"}]
+            [{"text": "🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦", "callback_data": "ig"}, {"text": "🎬 YouTube", "callback_data": "yt"}, {"text": "📋 指令清單", "callback_data": "help"}]
         ]
     }
 
