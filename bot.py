@@ -11,8 +11,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 # 超級管理員 ID（替換為您的 Telegram User ID）
 SUPER_ADMIN = 8126033106  # 請替換為您的實際 ID
 
-# 資料儲存檔案
-DATA_FILE = "admin_data.json"
+# 資料儲存檔案 - 使用絕對路徑確保在 Vercel 上可寫
+DATA_FILE = "/tmp/admin_data.json" if os.path.exists('/tmp') else "admin_data.json"
 
 # 初始化資料
 def load_data():
@@ -54,7 +54,7 @@ ADMIN_LOGS = data.get("admin_logs", [])
 # 台灣時區
 TAIWAN_TZ = pytz.timezone('Asia/Taipei')
 
-# 一般用戶命令（保持不變）
+# 一般用戶命令
 COMMANDS = {
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
@@ -68,7 +68,7 @@ COMMANDS = {
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ=="    
 }
 
-# 權限檢查函數（更新為使用新的資料結構）
+# 權限檢查函數
 def is_admin(user_id):
     return str(user_id) in ADMINS
 
@@ -76,7 +76,7 @@ def is_super_admin(user_id):
     admin_info = ADMINS.get(str(user_id), {})
     return admin_info.get('is_super', False)
 
-# 操作記錄函數（更新為自動儲存）
+# 操作記錄函數
 def log_admin_action(admin_id, action, target_id=None, details=None):
     taiwan_time = datetime.datetime.now(TAIWAN_TZ)
     log_entry = {
@@ -94,7 +94,7 @@ def log_admin_action(admin_id, action, target_id=None, details=None):
     data["admin_logs"] = ADMIN_LOGS
     save_data(data)
 
-# 新增管理員函數（更新為自動儲存）
+# 新增管理員函數
 def add_admin(admin_id, added_by, is_super=False):
     try:
         admin_id_str = str(admin_id)
@@ -113,7 +113,7 @@ def add_admin(admin_id, added_by, is_super=False):
         print(f"新增管理員錯誤：{e}")
         return False
 
-# 移除管理員函數（更新為自動儲存）
+# 移除管理員函數
 def remove_admin(admin_id):
     try:
         admin_id_str = str(admin_id)
@@ -128,12 +128,12 @@ def remove_admin(admin_id):
         print(f"移除管理員錯誤：{e}")
         return False
 
-# 更新話題函數（自動儲存）
+# 更新話題函數
 def update_allowed_threads():
     data["allowed_threads"] = ALLOWED_THREADS
     save_data(data)
 
-# 權限檢查函數（保持不變）
+# 權限檢查函數
 def should_process_message(update, user_id, message_text):
     chat_id = update['message']['chat']['id']
     thread_id = update['message'].get('message_thread_id')
@@ -146,31 +146,34 @@ def should_process_message(update, user_id, message_text):
     
     return thread_key in ALLOWED_THREADS
 
-# 設定命令清單（保持不變）
+# 設定命令清單
 def set_bot_commands():
-    url = f"https://api.telegram.org/bot{TOKEN}/setMyCommands"
-    commands_list = []
-    
-    for cmd, description in [
-        ("ca", "📜 合約地址"),
-        ("web", "🌐 官方網站"),
-        ("announcements", "📣 社群公告"),
-        ("rules", "📑 社群規範"),
-        ("jup_lock", "🔐 鎖倉資訊"),
-        ("pumpswap", "⛏️ 流動性礦池教學"),
-        ("invitation_code", "🔗 註冊連結"),
-        ("x", "𝕏 推特"),
-        ("dc", "💬 Discord"),
-        ("threads", "@ Threads"),
-        ("start", "✅ 開啟選單"),
-        ("help", "📋 指令清單")
-    ]:
-        commands_list.append({"command": cmd, "description": description})
-    
-    payload = {"commands": commands_list}
-    requests.post(url, json=payload)
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/setMyCommands"
+        commands_list = []
+        
+        for cmd, description in [
+            ("ca", "📜 合約地址"),
+            ("web", "🌐 官方網站"),
+            ("announcements", "📣 社群公告"),
+            ("rules", "📑 社群規範"),
+            ("jup_lock", "🔐 鎖倉資訊"),
+            ("pumpswap", "⛏️ 流動性礦池教學"),
+            ("invitation_code", "🔗 註冊連結"),
+            ("x", "𝕏 推特"),
+            ("dc", "💬 Discord"),
+            ("threads", "@ Threads"),
+            ("start", "✅ 開啟選單"),
+            ("help", "📋 指令清單")
+        ]:
+            commands_list.append({"command": cmd, "description": description})
+        
+        payload = {"commands": commands_list}
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"設定命令清單錯誤：{e}")
 
-# 一般用戶按鈕選單（保持不變）
+# 一般用戶按鈕選單
 def create_reply_markup():
     keyboard = [
         [{"text": "📜 合約地址", "callback_data": "ca"}],
@@ -181,7 +184,7 @@ def create_reply_markup():
     ]
     return {"inline_keyboard": keyboard}
 
-# 管理員私聊按鈕選單（保持不變）
+# 管理員私聊按鈕選單
 def create_private_admin_markup(user_id):
     keyboard = [
         [{"text": "👥 管理員列表", "callback_data": "private_list_admins"}, 
@@ -199,7 +202,7 @@ def create_private_admin_markup(user_id):
     
     return {"inline_keyboard": keyboard}
 
-# 群組管理指令處理（更新為自動儲存）
+# 群組管理指令處理
 def handle_group_admin_command(message_text, chat_id, user_id, update):
     try:
         thread_id = update['message'].get('message_thread_id')
@@ -226,7 +229,7 @@ def handle_group_admin_command(message_text, chat_id, user_id, update):
     except Exception as e:
         print(f"群組管理指令錯誤：{e}")
 
-# 私聊管理員命令處理（更新為使用新函數）
+# 私聊管理員命令處理
 def handle_private_admin_command(message_text, chat_id, user_id):
     try:
         if message_text.startswith('/admin add_admin '):
@@ -286,7 +289,7 @@ def handle_private_admin_command(message_text, chat_id, user_id):
         print(f"私聊管理員命令錯誤：{e}")
         send_message(chat_id, "❌ 命令處理失敗，請稍後再試")
 
-# 獲取管理員列表（更新為使用新資料結構）
+# 獲取管理員列表
 def get_admin_list_with_names():
     if not ADMINS:
         return "👥 目前沒有管理員"
@@ -325,7 +328,7 @@ def get_admin_list_with_names():
     
     return admin_list
 
-# 獲取話題列表（保持不變）
+# 獲取話題列表
 def get_thread_list_with_names():
     if not ALLOWED_THREADS:
         return "📋 目前沒有允許的話題"
@@ -349,29 +352,31 @@ def get_thread_list_with_names():
     
     return thread_list
 
-# 其他輔助函數（保持不變）
+# 獲取用戶資訊
 def get_user_info(user_id):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getChat"
         payload = {"chat_id": user_id}
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
             return response.json().get('result', {})
     except:
         pass
     return None
 
+# 獲取聊天資訊
 def get_chat_info(chat_id):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getChat"
         payload = {"chat_id": chat_id}
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
             return response.json().get('result', {})
     except:
         pass
     return None
 
+# 獲取話題名稱
 def get_thread_name(chat_id, thread_id):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getForumTopic"
@@ -379,14 +384,14 @@ def get_thread_name(chat_id, thread_id):
             "chat_id": chat_id,
             "message_thread_id": thread_id
         }
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
             return response.json().get('result', {}).get('name', '未知話題')
     except:
         pass
     return '未知話題'
 
-# 超級管理員專屬命令（保持不變）
+# 超級管理員專屬命令
 def handle_super_admin_commands(message_text, chat_id, user_id):
     try:
         if message_text.startswith('/admin logs'):
@@ -421,7 +426,7 @@ def handle_super_admin_commands(message_text, chat_id, user_id):
         print(f"超級管理員命令錯誤：{e}")
         send_message(chat_id, "❌ 操作紀錄查詢失敗")
 
-# UID 查詢處理函數（保持不變）
+# UID 查詢處理函數
 def handle_uid_query(update, chat_id):
     try:
         forwarded_user = update['message']['forward_from']
@@ -456,7 +461,7 @@ def handle_uid_query(update, chat_id):
         print(f"UID查詢錯誤：{e}")
         send_message(chat_id, "❌ 查詢失敗，請確保轉發的是用戶訊息且隱私設定允許")
 
-# UID 查詢按鈕處理函數（更新為使用新函數）
+# UID 查詢按鈕處理函數
 def handle_uid_query_buttons(callback_data, chat_id, user_id):
     try:
         if callback_data.startswith('copy_uid_'):
@@ -480,7 +485,7 @@ def handle_uid_query_buttons(callback_data, chat_id, user_id):
         print(f"UID按鈕處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 私聊管理員按鈕處理（保持不變）
+# 私聊管理員按鈕處理
 def handle_private_admin_button(callback_data, chat_id, user_id):
     try:
         if callback_data == 'private_list_admins':
@@ -579,7 +584,7 @@ def handle_private_admin_button(callback_data, chat_id, user_id):
         print(f"管理員按鈕處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 處理管理員輸入的 UID（更新為使用新函數）
+# 處理管理員輸入的 UID
 def handle_admin_uid_input(message_text, chat_id, user_id):
     try:
         uid_text = message_text.strip()
@@ -616,7 +621,7 @@ def handle_admin_uid_input(message_text, chat_id, user_id):
         print(f"管理員UID輸入處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 一般用戶命令處理（保持不變）
+# 一般用戶命令處理
 def handle_user_commands(message_text, chat_id, user_id, is_private):
     try:
         if message_text == '/start':
@@ -650,7 +655,7 @@ def handle_user_commands(message_text, chat_id, user_id, is_private):
     except Exception as e:
         print(f"一般用戶命令錯誤：{e}")
 
-# 主 webhook 處理（保持不變）
+# 主 webhook 處理
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -728,7 +733,7 @@ def answer_callback_query(callback_query_id):
     try:
         url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
         payload = {'callback_query_id': callback_query_id}
-        requests.post(url, json=payload)
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"回答回調查詢錯誤：{e}")
 
@@ -745,7 +750,7 @@ def send_message(chat_id, text, reply_markup=None, thread_id=None):
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
         
-        requests.post(url, json=payload)
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"發送訊息錯誤：{e}")
 
@@ -758,7 +763,7 @@ def set_webhook():
     try:
         webhook_url = f"https://{request.host}/webhook"
         url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         set_bot_commands()
         return response.json()
     except Exception as e:
