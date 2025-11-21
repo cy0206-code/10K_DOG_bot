@@ -20,12 +20,14 @@ SUPER_ADMIN = 8126033106
 # 在 Vercel 上使用 /tmp 目錄進行檔案儲存
 DATA_FILE = "/tmp/admin_data.json"
 
-# 初始化資料
+# 初始化資料 - 改進版本
 def load_data():
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                loaded_data = json.load(f)
+                print(f"成功載入資料，管理員數量: {len(loaded_data.get('admins', {}))}, 話題數量: {len(loaded_data.get('allowed_threads', {}))}")
+                return loaded_data
     except Exception as e:
         print(f"載入資料錯誤：{e}")
     
@@ -42,26 +44,39 @@ def load_data():
         "admin_logs": []
     }
     save_data(default_data)
+    print("創建新的預設資料檔案")
     return default_data
 
 def save_data(data):
     try:
+        # 確保目錄存在
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"資料已保存，管理員數量: {len(data.get('admins', {}))}, 話題數量: {len(data.get('allowed_threads', {}))}")
     except Exception as e:
         print(f"儲存資料錯誤：{e}")
+
+# 全域變數 - 改為從檔案動態載入
+def get_admins():
+    return data.get("admins", {})
+
+def get_allowed_threads():
+    return data.get("allowed_threads", {})
+
+def get_admin_logs():
+    return data.get("admin_logs", [])
 
 # 載入初始資料
 try:
     data = load_data()
-    ADMINS = data.get("admins", {})
-    ALLOWED_THREADS = data.get("allowed_threads", {})
-    ADMIN_LOGS = data.get("admin_logs", [])
 except Exception as e:
     print(f"初始化資料錯誤：{e}")
-    ADMINS = {}
-    ALLOWED_THREADS = {}
-    ADMIN_LOGS = []
+    data = {
+        "admins": {},
+        "allowed_threads": {},
+        "admin_logs": []
+    }
 
 # 台灣時區
 TAIWAN_TZ = pytz.timezone('Asia/Taipei')
@@ -80,12 +95,12 @@ COMMANDS = {
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ=="    
 }
 
-# 權限檢查函數
+# 權限檢查函數 - 改為從資料檔案讀取
 def is_admin(user_id):
-    return str(user_id) in ADMINS
+    return str(user_id) in get_admins()
 
 def is_super_admin(user_id):
-    admin_info = ADMINS.get(str(user_id), {})
+    admin_info = get_admins().get(str(user_id), {})
     return admin_info.get('is_super', False)
 
 # 操作記錄函數
@@ -99,12 +114,13 @@ def log_admin_action(admin_id, action, target_id=None, details=None):
             'target_id': target_id,
             'details': details
         }
-        ADMIN_LOGS.append(log_entry)
-        if len(ADMIN_LOGS) > 500:
-            ADMIN_LOGS.pop(0)
+        admin_logs = get_admin_logs()
+        admin_logs.append(log_entry)
+        if len(admin_logs) > 500:
+            admin_logs.pop(0)
         
         # 自動儲存到資料庫
-        data["admin_logs"] = ADMIN_LOGS
+        data["admin_logs"] = admin_logs
         save_data(data)
     except Exception as e:
         print(f"記錄操作錯誤：{e}")
@@ -113,14 +129,15 @@ def log_admin_action(admin_id, action, target_id=None, details=None):
 def add_admin(admin_id, added_by, is_super=False):
     try:
         admin_id_str = str(admin_id)
-        if admin_id_str not in ADMINS:
-            ADMINS[admin_id_str] = {
+        admins = get_admins()
+        if admin_id_str not in admins:
+            admins[admin_id_str] = {
                 "added_by": added_by,
                 "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat(),
                 "is_super": is_super
             }
             # 自動儲存到資料庫
-            data["admins"] = ADMINS
+            data["admins"] = admins
             save_data(data)
             return True
         return False
@@ -132,10 +149,11 @@ def add_admin(admin_id, added_by, is_super=False):
 def remove_admin(admin_id):
     try:
         admin_id_str = str(admin_id)
-        if admin_id_str in ADMINS and not ADMINS[admin_id_str].get('is_super', False):
-            del ADMINS[admin_id_str]
+        admins = get_admins()
+        if admin_id_str in admins and not admins[admin_id_str].get('is_super', False):
+            del admins[admin_id_str]
             # 自動儲存到資料庫
-            data["admins"] = ADMINS
+            data["admins"] = admins
             save_data(data)
             return True
         return False
@@ -146,12 +164,12 @@ def remove_admin(admin_id):
 # 更新話題函數
 def update_allowed_threads():
     try:
-        data["allowed_threads"] = ALLOWED_THREADS
+        data["allowed_threads"] = get_allowed_threads()
         save_data(data)
     except Exception as e:
         print(f"更新話題錯誤：{e}")
 
-# 權限檢查函數 - 簡化邏輯
+# 權限檢查函數
 def should_process_message(update, user_id, message_text):
     try:
         # 私聊永遠允許
@@ -169,7 +187,7 @@ def should_process_message(update, user_id, message_text):
             return True
         
         # 一般指令需要話題已被允許
-        return thread_key in ALLOWED_THREADS
+        return thread_key in get_allowed_threads()
     except Exception as e:
         print(f"權限檢查錯誤：{e}")
         return False
@@ -236,17 +254,20 @@ def handle_group_admin_command(message_text, chat_id, user_id, update):
     try:
         thread_id = update['message'].get('message_thread_id', 0)
         thread_key = f"{chat_id}_{thread_id}"
+        allowed_threads = get_allowed_threads()
         
         if message_text == '/admin add_thread':
             # 儲存為 True 以保持一致性
-            ALLOWED_THREADS[thread_key] = True
+            allowed_threads[thread_key] = True
+            data["allowed_threads"] = allowed_threads
             send_message(chat_id, "✅ 已允許當前話題", None, thread_id)
             log_admin_action(user_id, "add_thread", details=thread_key)
             update_allowed_threads()
                 
         elif message_text == '/admin remove_thread':
-            if thread_key in ALLOWED_THREADS:
-                del ALLOWED_THREADS[thread_key]
+            if thread_key in allowed_threads:
+                del allowed_threads[thread_key]
+                data["allowed_threads"] = allowed_threads
                 send_message(chat_id, "❌ 已移除當前話題權限", None, thread_id)
                 log_admin_action(user_id, "remove_thread", details=thread_key)
                 update_allowed_threads()
@@ -262,11 +283,12 @@ def handle_group_admin_command(message_text, chat_id, user_id, update):
 # 獲取管理員列表
 def get_admin_list_with_names():
     try:
-        if not ADMINS:
+        admins = get_admins()
+        if not admins:
             return "👥 目前沒有管理員"
         
         admin_list = "👥 管理員列表：\n\n"
-        for admin_id, admin_info in ADMINS.items():
+        for admin_id, admin_info in admins.items():
             try:
                 user_info = get_user_info(int(admin_id))
                 if user_info:
@@ -305,11 +327,12 @@ def get_admin_list_with_names():
 # 獲取話題列表
 def get_thread_list_with_names():
     try:
-        if not ALLOWED_THREADS:
+        allowed_threads = get_allowed_threads()
+        if not allowed_threads:
             return "📋 目前沒有允許的話題"
         
         thread_list = "📋 允許的話題列表：\n\n"
-        for thread_key in ALLOWED_THREADS.keys():
+        for thread_key in allowed_threads.keys():
             try:
                 chat_id, thread_id = thread_key.split('_')
                 thread_id = int(thread_id) if thread_id != '0' else 0
@@ -433,7 +456,8 @@ def handle_super_admin_commands(message_text, chat_id, user_id):
             parts = message_text.split(' ')
             count = int(parts[2]) if len(parts) > 2 else 10
             
-            logs = ADMIN_LOGS[-count:] if count <= len(ADMIN_LOGS) else ADMIN_LOGS
+            admin_logs = get_admin_logs()
+            logs = admin_logs[-count:] if count <= len(admin_logs) else admin_logs
             if not logs:
                 send_message(chat_id, "📊 目前沒有操作紀錄")
             else:
@@ -585,7 +609,7 @@ def handle_admin_uid_input(message_text, chat_id, user_id):
         print(f"管理員UID輸入處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 一般用戶命令處理 - 修正邏輯
+# 一般用戶命令處理 - 修正 help 按鈕顯示
 def handle_user_commands(message_text, chat_id, user_id, is_private, update):
     try:
         print(f"處理一般用戶命令: {message_text}")
@@ -595,20 +619,7 @@ def handle_user_commands(message_text, chat_id, user_id, is_private, update):
             send_message(chat_id, welcome_text, create_reply_markup())
             
         elif message_text == '/help':
-            help_text = """📋 指令清單：
-
-/start - ✅ 開啟選單
-/help - 📋 顯示指令清單
-/ca - 📜 合約地址
-/web - 🌐 官方網站
-/announcements - 📣 社群公告
-/rules - 📑 社群規範
-/jup_lock - 🔐 鎖倉資訊
-/pumpswap - ⛏️ 流動性礦池教學
-/invitation_code - 🔗 註冊連結
-/x - 𝕏 Twitter推特
-/dc - 💬 Discord社群
-/threads - @ Threads"""
+            help_text = get_help_text()
             send_message(chat_id, help_text)
             
         elif message_text.startswith('/'):
@@ -624,7 +635,24 @@ def handle_user_commands(message_text, chat_id, user_id, is_private, update):
     except Exception as e:
         print(f"一般用戶命令錯誤：{e}")
 
-# 主 webhook 處理 - 修正邏輯
+# 統一的 help 文字函數
+def get_help_text():
+    return """📋 指令清單：
+
+/start - ✅ 開啟選單
+/help - 📋 顯示指令清單
+/ca - 📜 合約地址
+/web - 🌐 官方網站
+/announcements - 📣 社群公告
+/rules - 📑 社群規範
+/jup_lock - 🔐 鎖倉資訊
+/pumpswap - ⛏️ 流動性礦池教學
+/invitation_code - 🔗 註冊連結
+/x - 𝕏 Twitter推特
+/dc - 💬 Discord社群
+/threads - @ Threads"""
+
+# 主 webhook 處理
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -643,7 +671,8 @@ def webhook():
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
             elif callback_data == 'help':
-                help_text = "📋 所有可用指令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
+                # 使用統一的 help 文字
+                help_text = get_help_text()
                 send_message(chat_id, help_text)
             elif is_private and callback_data.startswith('private_'):
                 handle_private_admin_button(callback_data, chat_id, user_id)
