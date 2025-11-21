@@ -17,67 +17,66 @@ current_gist_id = GIST_ID
 
 # ========== Gist 資料管理 ==========
 def load_data():
+    """從 Gist 讀取資料"""
     global current_gist_id
     
     if not GIST_TOKEN:
-        print("❌ 未設定 GIST_TOKEN，使用記憶體儲存")
-        return create_default_data()
+        print("❌ 未設定 GIST_TOKEN")
+        return get_default_data()
     
     try:
         headers = {'Authorization': f'token {GIST_TOKEN}'}
         
-        # 如果有 GIST_ID，嘗試讀取
+        # 如果有 GIST_ID，直接讀取
         if current_gist_id:
-            response = requests.get(
-                f'https://api.github.com/gists/{current_gist_id}',
-                headers=headers,
-                timeout=10
-            )
+            url = f'https://api.github.com/gists/{current_gist_id}'
+        else:
+            # 搜尋現有的 Gist
+            url = 'https://api.github.com/gists'
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
-                gist_data = response.json()
-                content = gist_data['files'][GIST_FILENAME]['content']
-                print("✅ 從 Gist 載入資料成功")
-                return json.loads(content)
+                gists = response.json()
+                for gist in gists:
+                    if GIST_FILENAME in gist['files']:
+                        current_gist_id = gist['id']
+                        url = f'https://api.github.com/gists/{current_gist_id}'
+                        break
+                else:
+                    # 沒有找到，創建新的
+                    return create_new_gist()
             else:
-                print(f"❌ Gist 讀取失敗: {response.status_code}")
-                current_gist_id = ""  # 重置 Gist ID
+                return get_default_data()
         
-        # 搜尋現有的 Gist
-        response = requests.get(
-            'https://api.github.com/gists',
-            headers=headers,
-            timeout=10
-        )
+        # 讀取 Gist 內容
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
-            gists = response.json()
-            for gist in gists:
-                if GIST_FILENAME in gist['files']:
-                    current_gist_id = gist['id']
-                    content = gist['files'][GIST_FILENAME]['content']
-                    print(f"✅ 找到現有 Gist: {current_gist_id}")
-                    return json.loads(content)
-        
-        # 沒有找到現有 Gist，創建新的
-        print("❌ 未找到現有 Gist，創建新資料")
-        return create_default_data()
-        
+            gist_data = response.json()
+            content = gist_data['files'][GIST_FILENAME]['content']
+            data = json.loads(content)
+            print("✅ 從 Gist 讀取資料成功")
+            return data
+        else:
+            print(f"❌ 讀取 Gist 失敗: {response.status_code}")
+            return get_default_data()
+            
     except Exception as e:
-        print(f"❌ Gist 載入失敗: {e}")
-        return create_default_data()
+        print(f"❌ 讀取資料錯誤: {e}")
+        return get_default_data()
 
 def save_data(data_to_save):
+    """儲存資料到 Gist"""
     global current_gist_id
     
     if not GIST_TOKEN:
-        print("❌ 未設定 GIST_TOKEN，無法持久化儲存")
+        print("❌ 未設定 GIST_TOKEN，無法儲存")
         return
     
     try:
         headers = {'Authorization': f'token {GIST_TOKEN}'}
         files = {GIST_FILENAME: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
         
-        # 如果有 Gist ID，更新現有 Gist
         if current_gist_id:
+            # 更新現有 Gist
             response = requests.patch(
                 f'https://api.github.com/gists/{current_gist_id}',
                 headers=headers,
@@ -91,7 +90,7 @@ def save_data(data_to_save):
                 headers=headers,
                 json={
                     "public": False,
-                    "description": "10K DOG Bot Data Storage",
+                    "description": "10K DOG Bot Data",
                     "files": files
                 },
                 timeout=10
@@ -100,45 +99,65 @@ def save_data(data_to_save):
                 gist_data = response.json()
                 current_gist_id = gist_data['id']
                 print(f"✅ 創建新 Gist: {current_gist_id}")
-            else:
-                print(f"❌ 創建 Gist 失敗: {response.status_code}")
-                return
         
         if response.status_code in [200, 201]:
-            print("✅ 資料已儲存至 Gist")
+            print("✅ 資料已儲存到 Gist")
         else:
-            print(f"❌ Gist 儲存失敗: {response.status_code} - {response.text}")
+            print(f"❌ 儲存失敗: {response.status_code}")
             
     except Exception as e:
-        print(f"❌ Gist 儲存錯誤: {e}")
+        print(f"❌ 儲存錯誤: {e}")
 
-def create_default_data():
-    default_data = {
-        "admins": {str(SUPER_ADMIN): {"added_by": "system", "added_time": datetime.datetime.now().isoformat(), "is_super": True}},
+def get_default_data():
+    """取得預設資料結構"""
+    return {
+        "admins": {
+            str(SUPER_ADMIN): {
+                "added_by": "system", 
+                "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat(), 
+                "is_super": True
+            }
+        },
         "allowed_threads": {},
         "admin_logs": []
     }
+
+def create_new_gist():
+    """創建新 Gist 並返回預設資料"""
+    default_data = get_default_data()
     save_data(default_data)
     return default_data
 
 # 初始化資料
 data = load_data()
 
-def get_admins(): return data.get("admins", {})
-def get_threads(): return data.get("allowed_threads", {})
-def get_logs(): return data.get("admin_logs", [])
+# ========== 資料操作函數 ==========
+def get_admins(): 
+    return data.get("admins", {})
+
+def get_threads(): 
+    return data.get("allowed_threads", {})
+
+def get_logs(): 
+    return data.get("admin_logs", [])
 
 def update_data(key, value):
+    """更新資料並立即儲存"""
     data[key] = value
     save_data(data)
 
-# ========== 核心功能函數 ==========
-def is_admin(user_id): return str(user_id) in get_admins()
-def is_super_admin(user_id): return get_admins().get(str(user_id), {}).get('is_super', False)
+# ========== 管理員操作 ==========
+def is_admin(user_id): 
+    return str(user_id) in get_admins()
+
+def is_super_admin(user_id): 
+    return get_admins().get(str(user_id), {}).get('is_super', False)
 
 def add_admin(admin_id, added_by):
+    """新增管理員到資料庫"""
     admins = get_admins()
     admin_str = str(admin_id)
+    
     if admin_str not in admins:
         admins[admin_str] = {
             "added_by": added_by,
@@ -150,30 +169,37 @@ def add_admin(admin_id, added_by):
     return False
 
 def remove_admin(admin_id):
+    """從資料庫移除管理員"""
     admins = get_admins()
     admin_str = str(admin_id)
+    
     if admin_str in admins and not admins[admin_str].get('is_super', False):
         del admins[admin_str]
         update_data("admins", admins)
         return True
     return False
 
+# ========== 話題操作 ==========
 def toggle_thread(chat_id, thread_id, add=True):
+    """新增或移除話題到資料庫"""
     threads = get_threads()
     key = f"{chat_id}_{thread_id}"
+    
     if add:
         threads[key] = True
     elif key in threads:
         del threads[key]
     else:
         return False
+        
     update_data("allowed_threads", threads)
     return True
 
+# ========== 紀錄操作 ==========
 def log_action(admin_id, action, target=None, details=None):
+    """新增操作紀錄到資料庫"""
     logs = get_logs()
     
-    # 獲取管理員名稱
     admin_info = get_user_info(admin_id)
     admin_name = get_display_name(admin_info) if admin_info else str(admin_id)
     
@@ -186,14 +212,15 @@ def log_action(admin_id, action, target=None, details=None):
         'details': details
     }
     
-    # 如果有目標ID，也獲取目標名稱
     if target:
         target_info = get_user_info(target)
         if target_info:
             log_entry['target_name'] = get_display_name(target_info)
     
     logs.append(log_entry)
-    if len(logs) > 100: logs.pop(0)
+    if len(logs) > 100: 
+        logs.pop(0)
+        
     update_data("admin_logs", logs)
 
 # ========== 權限檢查 ==========
@@ -283,14 +310,11 @@ def get_user_info(user_id):
     return None
 
 def get_display_name(user_info):
-    """從用戶資訊中獲取顯示名稱"""
     if not user_info:
         return "未知用戶"
-    
     first_name = user_info.get('first_name', '')
     last_name = user_info.get('last_name', '')
     username = user_info.get('username', '')
-    
     full_name = f"{first_name} {last_name}".strip()
     if full_name and username:
         return f"{full_name} (@{username})"
@@ -640,4 +664,3 @@ def set_webhook():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-    
