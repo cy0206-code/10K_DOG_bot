@@ -2,10 +2,26 @@ import os
 from flask import Flask, request
 import requests
 import json
+import datetime
 
 app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 
+# 超級管理員 ID（替換為您的 Telegram User ID）
+SUPER_ADMIN = 8126033106  # 請替換為您的實際 ID
+
+# 管理員名單
+ADMINS = {
+    SUPER_ADMIN: True,  # 超級管理員
+}
+
+# 允許的話題（群組ID_話題ID）
+ALLOWED_THREADS = {}
+
+# 操作記錄
+ADMIN_LOGS = []
+
+# 一般用戶命令
 COMMANDS = {
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
@@ -19,7 +35,43 @@ COMMANDS = {
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ=="    
 }
 
-# 設定命令清單（讓 Telegram 顯示自動完成）
+# 權限檢查函數
+def is_admin(user_id):
+    return user_id == SUPER_ADMIN or user_id in ADMINS
+
+def is_super_admin(user_id):
+    return user_id == SUPER_ADMIN
+
+# 操作記錄函數
+def log_admin_action(admin_id, action, target_id=None, details=None):
+    log_entry = {
+        'timestamp': datetime.datetime.now().isoformat(),
+        'admin_id': admin_id,
+        'action': action,
+        'target_id': target_id,
+        'details': details
+    }
+    ADMIN_LOGS.append(log_entry)
+    if len(ADMIN_LOGS) > 500:
+        ADMIN_LOGS.pop(0)
+
+# 權限檢查函數
+def should_process_message(update, user_id, message_text):
+    chat_id = update['message']['chat']['id']
+    thread_id = update['message'].get('message_thread_id')
+    
+    # 建立話題識別碼（主聊天室 thread_id = 0）
+    thread_key = f"{chat_id}_{thread_id if thread_id else 0}"
+    
+    # 1. 管理員的管理指令永遠允許
+    if (is_admin(user_id) and 
+        message_text in ['/admin add_thread', '/admin remove_thread']):
+        return True
+    
+    # 2. 一般指令需要話題已被允許
+    return thread_key in ALLOWED_THREADS
+
+# 設定命令清單
 def set_bot_commands():
     url = f"https://api.telegram.org/bot{TOKEN}/setMyCommands"
     commands_list = []
@@ -43,7 +95,7 @@ def set_bot_commands():
     payload = {"commands": commands_list}
     requests.post(url, json=payload)
 
-# 底部按鈕選單
+# 一般用戶按鈕選單
 def create_reply_markup():
     keyboard = [
         [{"text": "📜 合約地址", "callback_data": "ca"}],
@@ -54,93 +106,444 @@ def create_reply_markup():
     ]
     return {"inline_keyboard": keyboard}
 
+# 管理員私聊按鈕選單
+def create_private_admin_markup(user_id):
+    keyboard = [
+        [{"text": "👥 管理員列表", "callback_data": "private_list_admins"}],
+        [{"text": "🔍 查詢TG UID", "callback_data": "private_query_uid"}],
+        [{"text": "➕ 輸入ID新增", "callback_data": "private_add_admin"}],
+        [{"text": "❌ 移除管理員", "callback_data": "private_remove_admin"}],
+        [{"text": "📋 話題列表", "callback_data": "private_list_threads"}],
+        [{"text": "🛠️ 群組指令說明", "callback_data": "private_group_commands"}],
+    ]
+    
+    if is_super_admin(user_id):
+        keyboard.append([{"text": "📊 操作紀錄", "callback_data": "private_view_logs"}])
+    
+    keyboard.append([{"text": "🔙 主選單", "callback_data": "private_back_to_main"}])
+    
+    return {"inline_keyboard": keyboard}
+
+# 群組管理指令處理
+def handle_group_admin_command(message_text, chat_id, user_id, update):
+    try:
+        thread_id = update['message'].get('message_thread_id')
+        
+        # 建立話題識別碼
+        thread_key = f"{chat_id}_{thread_id if thread_id else 0}"
+        
+        if message_text == '/admin add_thread':
+            ALLOWED_THREADS[thread_key] = True
+            if thread_id:
+                send_message(chat_id, "✅ 已允許當前話題", None, thread_id)
+            else:
+                send_message(chat_id, "✅ 已允許主聊天室")
+            log_admin_action(user_id, "add_thread", details=thread_key)
+                
+        elif message_text == '/admin remove_thread':
+            if thread_key in ALLOWED_THREADS:
+                del ALLOWED_THREADS[thread_key]
+                if thread_id:
+                    send_message(chat_id, "❌ 已移除當前話題權限", None, thread_id)
+                else:
+                    send_message(chat_id, "❌ 已移除主聊天室權限")
+                log_admin_action(user_id, "remove_thread", details=thread_key)
+            else:
+                if thread_id:
+                    send_message(chat_id, "❌ 此話題未被允許", None, thread_id)
+                else:
+                    send_message(chat_id, "❌ 主聊天室未被允許")
+        
+        # /admin 單獨輸入時靜默
+        elif message_text == '/admin':
+            pass
+            
+    except Exception as e:
+        print(f"群組管理指令錯誤：{e}")
+
+# 私聊管理員命令處理
+def handle_private_admin_command(message_text, chat_id, user_id):
+    try:
+        if message_text.startswith('/admin add_admin '):
+            parts = message_text.split(' ')
+            if len(parts) > 2:
+                try:
+                    new_admin_id = int(parts[2])
+                    if new_admin_id in ADMINS:
+                        send_message(chat_id, f"❌ 用戶 {new_admin_id} 已經是管理員")
+                    else:
+                        ADMINS[new_admin_id] = True
+                        send_message(chat_id, f"✅ 已新增管理員: {new_admin_id}")
+                        log_admin_action(user_id, "add_admin", target_id=new_admin_id)
+                except ValueError:
+                    send_message(chat_id, "❌ 請提供有效的用戶ID")
+                    
+        elif message_text.startswith('/admin remove_admin '):
+            parts = message_text.split(' ')
+            if len(parts) > 2:
+                try:
+                    remove_admin_id = int(parts[2])
+                    if remove_admin_id in ADMINS and remove_admin_id != SUPER_ADMIN:
+                        del ADMINS[remove_admin_id]
+                        send_message(chat_id, f"❌ 已移除管理員: {remove_admin_id}")
+                        log_admin_action(user_id, "remove_admin", target_id=remove_admin_id)
+                    else:
+                        send_message(chat_id, "❌ 該用戶不是管理員或是超級管理員")
+                except ValueError:
+                    send_message(chat_id, "❌ 請提供有效的用戶ID")
+                    
+        elif message_text == '/admin list_admins':
+            admin_list = "\n".join([f"👤 {admin_id}" for admin_id in ADMINS.keys()])
+            send_message(chat_id, f"👥 管理員列表:\n{admin_list}")
+            
+        elif message_text == '/admin list_threads':
+            if not ALLOWED_THREADS:
+                send_message(chat_id, "📋 目前沒有允許的話題")
+            else:
+                thread_list = "\n".join([f"✅ {thread_key}" for thread_key in ALLOWED_THREADS.keys()])
+                send_message(chat_id, f"📋 允許的話題列表:\n{thread_list}")
+            
+        elif message_text == '/admin commands':
+            commands_help = """🛠️ 群組管理指令說明：
+
+在群組或話題中使用以下指令：
+
+/admin add_thread
+✅ 允許當前話題使用機器人功能
+
+/admin remove_thread  
+❌ 移除當前話題的機器人權限
+
+⚠️ 注意：
+- 主聊天室也被視為一個「話題」
+- 輸入 /admin 單獨時不會有任何回應"""
+            send_message(chat_id, commands_help)
+            
+        elif message_text == '/admin myid':
+            send_message(chat_id, f"🔢 您的 User ID 是: `{user_id}`\n\n請將這個數字提供給超級管理員")
+            
+    except Exception as e:
+        print(f"私聊管理員命令錯誤：{e}")
+        send_message(chat_id, "❌ 命令處理失敗，請稍後再試")
+
+# 超級管理員專屬命令
+def handle_super_admin_commands(message_text, chat_id, user_id):
+    try:
+        if message_text.startswith('/admin logs'):
+            parts = message_text.split(' ')
+            count = int(parts[2]) if len(parts) > 2 else 10
+            
+            logs = ADMIN_LOGS[-count:] if count <= len(ADMIN_LOGS) else ADMIN_LOGS
+            if not logs:
+                send_message(chat_id, "📊 目前沒有操作紀錄")
+            else:
+                log_text = "📊 最近管理操作紀錄：\n\n"
+                
+                for log in reversed(logs):
+                    time = log['timestamp'][11:16]
+                    admin_info = f"👤 {log['admin_id']}"
+                    action_info = f"📝 {log['action']}"
+                    target_info = f"→ 👥 {log['target_id']}" if log['target_id'] else ""
+                    
+                    log_text += f"⏰ {time} | {admin_info}\n   {action_info} {target_info}\n\n"
+                
+                send_message(chat_id, log_text)
+                
+    except Exception as e:
+        print(f"超級管理員命令錯誤：{e}")
+        send_message(chat_id, "❌ 操作紀錄查詢失敗")
+
+# UID 查詢處理函數
+def handle_uid_query(update, chat_id):
+    try:
+        forwarded_user = update['message']['forward_from']
+        forwarded_user_id = forwarded_user['id']
+        forwarded_first_name = forwarded_user.get('first_name', '')
+        forwarded_last_name = forwarded_user.get('last_name', '')
+        forwarded_username = forwarded_user.get('username', '')
+        
+        # 組合完整姓名
+        full_name = forwarded_first_name
+        if forwarded_last_name:
+            full_name += f" {forwarded_last_name}"
+        if not full_name:
+            full_name = "未知"
+        
+        user_info = f"""🔍 **用戶 UID 查詢結果**
+
+👤 **姓名：** {full_name}
+🔢 **UID：** `{forwarded_user_id}`
+📧 **用戶名：** @{forwarded_username if forwarded_username else '未設定'}"""
+
+        # 建立操作按鈕
+        copy_keyboard = {
+            "inline_keyboard": [
+                [{"text": "📋 複製UID", "callback_data": f"copy_uid_{forwarded_user_id}"}],
+                [{"text": "➕ 新增此用戶為管理員", "callback_data": f"add_this_user_{forwarded_user_id}"}],
+                [{"text": "🔙 返回管理員面板", "callback_data": "private_back_to_admin"}]
+            ]
+        }
+        
+        send_message(chat_id, user_info, copy_keyboard)
+        
+    except Exception as e:
+        print(f"UID查詢錯誤：{e}")
+        send_message(chat_id, "❌ 查詢失敗，請確保轉發的是用戶訊息且隱私設定允許")
+
+# UID 查詢按鈕處理函數
+def handle_uid_query_buttons(callback_data, chat_id, user_id):
+    try:
+        if callback_data.startswith('copy_uid_'):
+            # 複製 UID 功能
+            uid_to_copy = callback_data.replace('copy_uid_', '')
+            send_message(chat_id, f"📋 UID 已準備好：`{uid_to_copy}`\n\n請手動複製上方數字，然後使用「➕ 輸入ID新增」功能")
+            
+        elif callback_data.startswith('add_this_user_'):
+            # 一鍵新增管理員功能
+            if is_super_admin(user_id):
+                uid_to_add = int(callback_data.replace('add_this_user_', ''))
+                
+                # 檢查是否已是管理員
+                if uid_to_add in ADMINS:
+                    send_message(chat_id, f"❌ 用戶 {uid_to_add} 已經是管理員")
+                else:
+                    ADMINS[uid_to_add] = True
+                    send_message(chat_id, f"✅ 已新增用戶 {uid_to_add} 為管理員")
+                    log_admin_action(user_id, "add_admin", target_id=uid_to_add)
+            else:
+                send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
+                
+    except ValueError:
+        send_message(chat_id, "❌ UID 格式錯誤")
+    except Exception as e:
+        print(f"UID按鈕處理錯誤：{e}")
+        send_message(chat_id, "❌ 操作失敗，請稍後再試")
+
+# 私聊管理員按鈕處理
+def handle_private_admin_button(callback_data, chat_id, user_id):
+    try:
+        if callback_data == 'private_list_admins':
+            admin_list = "\n".join([f"👤 {admin_id}" for admin_id in ADMINS.keys()])
+            send_message(chat_id, f"👥 管理員列表:\n{admin_list}")
+            
+        elif callback_data == 'private_query_uid':
+            help_text = """🔍 **查詢用戶 UID**
+
+請轉發該用戶的任意一則訊息給我，我將回覆：
+• 用戶基本資訊
+• UID 數字
+• 複製按鈕
+• 一鍵新增管理員按鈕
+
+📝 **使用步驟：**
+1. 長按用戶訊息選擇「轉發」
+2. 選擇這個機器人
+3. 自動獲得 UID + 操作按鈕"""
+            send_message(chat_id, help_text)
+            
+        elif callback_data == 'private_add_admin':
+            help_text = """➕ **輸入ID新增管理員**
+
+請使用指令：
+`/admin add_admin [用戶UID]`
+
+範例：
+`/admin add_admin 123456789`
+
+💡 **如何取得UID：**
+使用「🔍 查詢TG UID」功能"""
+            send_message(chat_id, help_text)
+            
+        elif callback_data == 'private_remove_admin':
+            send_message(chat_id, "請使用指令：/admin remove_admin [用戶ID]")
+            
+        elif callback_data == 'private_list_threads':
+            if not ALLOWED_THREADS:
+                send_message(chat_id, "📋 目前沒有允許的話題")
+            else:
+                thread_list = "\n".join([f"✅ {thread_key}" for thread_key in ALLOWED_THREADS.keys()])
+                send_message(chat_id, f"📋 允許的話題列表:\n{thread_list}")
+            
+        elif callback_data == 'private_group_commands':
+            commands_help = """🛠️ 群組管理指令說明：
+
+在群組或話題中使用以下指令：
+
+/admin add_thread
+✅ 允許當前話題使用機器人功能
+
+/admin remove_thread  
+❌ 移除當前話題的機器人權限
+
+⚠️ 注意：
+- 主聊天室也被視為一個「話題」
+- 輸入 /admin 單獨時不會有任何回應"""
+            send_message(chat_id, commands_help)
+            
+        elif callback_data == 'private_view_logs' and is_super_admin(user_id):
+            logs = ADMIN_LOGS[-10:]
+            if not logs:
+                send_message(chat_id, "📊 目前沒有操作紀錄")
+            else:
+                log_text = "📊 最近10筆操作：\n\n"
+                for log in reversed(logs):
+                    time = log['timestamp'][11:16]
+                    log_text += f"⏰ {time} | 👤 {log['admin_id']} | 📝 {log['action']}"
+                    if log['target_id']:
+                        log_text += f" → 👥 {log['target_id']}"
+                    log_text += "\n"
+                send_message(chat_id, log_text)
+            
+        elif callback_data == 'private_back_to_main':
+            send_message(chat_id, "🐾 歡迎使用10K DOG 官方BOT", create_reply_markup())
+            
+        elif callback_data == 'private_back_to_admin':
+            menu_text = "👑 管理員控制面板"
+            markup = create_private_admin_markup(user_id)
+            send_message(chat_id, menu_text, markup)
+            
+    except Exception as e:
+        print(f"管理員按鈕處理錯誤：{e}")
+        send_message(chat_id, "❌ 操作失敗，請稍後再試")
+
+# 一般用戶命令處理
+def handle_user_commands(message_text, chat_id, user_id, is_private):
+    try:
+        if message_text == '/start':
+            welcome_text = "🐾 歡迎使用10K DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
+            send_message(chat_id, welcome_text, create_reply_markup())
+            
+        elif message_text == '/help':
+            help_text = """📋 指令清單：
+
+/start - ✅ 開啟選單
+/help - 📋 顯示指令清單
+/ca - 📜 合約地址
+/web - 🌐 官方網站
+/announcements - 📣 社群公告
+/rules - 📑 社群規範
+/jup_lock - 🔐 鎖倉資訊
+/pumpswap - ⛏️ 流動性礦池教學
+/invitation_code - 🔗 註冊連結
+/x - 𝕏 Twitter推特
+/dc - 💬 Discord社群
+/threads - @ Threads"""
+            send_message(chat_id, help_text)
+            
+        elif message_text.startswith('/'):
+            command = message_text[1:].lower().split(' ')[0]
+            if command in COMMANDS:
+                send_message(chat_id, COMMANDS[command])
+            else:
+                pass  # 未知命令不回應
+                
+    except Exception as e:
+        print(f"一般用戶命令錯誤：{e}")
+
+# 主 webhook 處理
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         update = request.get_json()
         
-        # 處理一般訊息
-        if 'message' in update and 'text' in update['message']:
-            message_text = update['message']['text']
+        # 1. 先處理自動 UID 查詢（轉發的訊息）
+        if ('message' in update and 
+            'forward_from' in update['message'] and 
+            not update['message']['text'].startswith('/')):
+            
             chat_id = update['message']['chat']['id']
+            user_id = update['message']['from']['id']
             
-            if message_text == '/start':
-                welcome_text = "🐾 歡迎使用10K Mark DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
-                send_message(chat_id, welcome_text, create_reply_markup())
-                
-            elif message_text == '/help':
-                help_text = """📋 指令清單：
-
-/start - ✅ 開啟選單
-/help - 📋 顯示指令清單
-/ca - 📜 合約地址
-/web - 🌐 官方網站
-/announcements - 📣 社群公告
-/rules - 📑 社群規範
-/jup_lock - 🔐 鎖倉資訊
-/pumpswap - ⛏️ 流動性礦池教學
-/invitation_code - 🔗 註冊連結
-/x - 𝕏 Twitter推特
-/dc - 💬 Discord社群
-/threads - @ Threads"""
-                send_message(chat_id, help_text)
-                
-            elif message_text.startswith('/'):
-                command = message_text[1:].lower().split(' ')[0]
-                
-                if command in COMMANDS:
-                    send_message(chat_id, COMMANDS[command])
-                else:
-                    # 未知命令：直接不回應
-                    pass  # 什麼都不做
-            
-        # 處理按鈕點擊
+            # 只有管理員可以使用查詢功能
+            if is_admin(user_id):
+                handle_uid_query(update, chat_id)
+                return 'OK'
+        
+        # 2. 處理按鈕點擊
         elif 'callback_query' in update:
             callback_data = update['callback_query']['data']
             chat_id = update['callback_query']['message']['chat']['id']
+            user_id = update['callback_query']['from']['id']
+            is_private = not str(chat_id).startswith('-100')
             
+            # 一般按鈕處理
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
             elif callback_data == 'help':
-                help_text = """📋 所有可用指令：
-
-/start - ✅ 開啟選單
-/help - 📋 顯示指令清單
-/ca - 📜 合約地址
-/web - 🌐 官方網站
-/announcements - 📣 社群公告
-/rules - 📑 社群規範
-/jup_lock - 🔐 鎖倉資訊
-/pumpswap - ⛏️ 流動性礦池教學
-/invitation_code - 🔗 註冊連結
-/x - 𝕏 Twitter推特
-/dc - 💬 Discord社群
-/threads - @ Threads"""
+                help_text = "📋 所有可用指令：\n" + "\n".join([f"/{cmd}" for cmd in COMMANDS.keys()])
                 send_message(chat_id, help_text)
             
-            # 回答回調查詢（移除等待狀態）
-            answer_callback_query(update['callback_query']['id'])
+            # 私聊管理員按鈕處理
+            elif is_private and callback_data.startswith('private_'):
+                handle_private_admin_button(callback_data, chat_id, user_id)
             
+            # UID 查詢相關按鈕處理
+            elif is_private and (callback_data.startswith('copy_uid_') or callback_data.startswith('add_this_user_')):
+                handle_uid_query_buttons(callback_data, chat_id, user_id)
+            
+            # 回答回調查詢
+            answer_callback_query(update['callback_query']['id'])
+            return 'OK'
+        
+        # 3. 處理一般文字訊息
+        elif 'message' in update and 'text' in update['message']:
+            message_text = update['message']['text']
+            chat_id = update['message']['chat']['id']
+            user_id = update['message']['from']['id']
+            is_private = not str(chat_id).startswith('-100')
+            
+            # 🔒 一般用戶管理指令過濾
+            if message_text.startswith('/admin') and not is_admin(user_id):
+                return 'OK'
+            
+            # 🚫 話題權限檢查
+            if not is_private and not should_process_message(update, user_id, message_text):
+                return 'OK'
+            
+            # 👑 管理員命令處理
+            if is_admin(user_id) and message_text.startswith('/admin'):
+                if is_private:
+                    if message_text == '/admin':
+                        menu_text = "👑 管理員控制面板"
+                        markup = create_private_admin_markup(user_id)
+                        send_message(chat_id, menu_text, markup)
+                    else:
+                        if is_super_admin(user_id) and message_text.startswith('/admin logs'):
+                            handle_super_admin_commands(message_text, chat_id, user_id)
+                        else:
+                            handle_private_admin_command(message_text, chat_id, user_id)
+                else:
+                    handle_group_admin_command(message_text, chat_id, user_id, update)
+            
+            # 👤 一般用戶命令處理
+            else:
+                handle_user_commands(message_text, chat_id, user_id, is_private)
+        
         return 'OK'
     except Exception as e:
-        print(f"錯誤：{e}")
+        print(f"webhook 錯誤：{e}")
         return 'OK'
 
 def answer_callback_query(callback_query_id):
-    url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
-    payload = {'callback_query_id': callback_query_id}
-    requests.post(url, json=payload)
-
-def send_message(chat_id, text, reply_markup=None):
-    url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-    payload = {
-        'chat_id': chat_id,
-        'text': text
-    }
-    if reply_markup:
-        payload['reply_markup'] = json.dumps(reply_markup)
-    
     try:
+        url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
+        payload = {'callback_query_id': callback_query_id}
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"回答回調查詢錯誤：{e}")
+
+def send_message(chat_id, text, reply_markup=None, thread_id=None):
+    try:
+        url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+        payload = {
+            'chat_id': chat_id,
+            'text': text
+        }
+        if thread_id:
+            payload['message_thread_id'] = thread_id
+        if reply_markup:
+            payload['reply_markup'] = json.dumps(reply_markup)
+        
         requests.post(url, json=payload)
     except Exception as e:
         print(f"發送訊息錯誤：{e}")
@@ -151,14 +554,15 @@ def home():
 
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
-    webhook_url = f"https://{request.host}/webhook"
-    url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
-    response = requests.get(url)
-    
-    # 同時設定命令清單
-    set_bot_commands()
-    
-    return response.json()
+    try:
+        webhook_url = f"https://{request.host}/webhook"
+        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
+        response = requests.get(url)
+        set_bot_commands()
+        return response.json()
+    except Exception as e:
+        print(f"設定 webhook 錯誤：{e}")
+        return {"error": str(e)}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
