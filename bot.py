@@ -97,7 +97,7 @@ def log_action(admin_id, action, target=None, details=None):
     if len(logs) > 100: logs.pop(0)
     update_data("admin_logs", logs)
 
-# ========== 訊息處理核心 ==========
+# ========== 權限檢查 ==========
 def should_process(update, user_id, text):
     chat_id = update['message']['chat']['id']
     
@@ -165,6 +165,98 @@ def admin_menu(user_id):
         keyboard.append([{"text": "📊 操作紀錄", "callback_data": "admin_logs"}])
     keyboard.append([{"text": "🔙 主選單", "callback_data": "main_menu"}])
     return {"inline_keyboard": keyboard}
+
+# ========== 用戶資訊獲取 ==========
+def get_user_info(user_id):
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/getChat",
+            json={"chat_id": user_id},
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json().get('result', {})
+    except:
+        pass
+    return None
+
+def get_chat_info(chat_id):
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/getChat",
+            json={"chat_id": chat_id},
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json().get('result', {})
+    except:
+        pass
+    return None
+
+def get_thread_name(chat_id, thread_id):
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/getForumTopic",
+            json={"chat_id": chat_id, "message_thread_id": thread_id},
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json().get('result', {}).get('name', '未知話題')
+    except:
+        pass
+    return '未知話題'
+
+# ========== 列表顯示函數 ==========
+def get_admin_list_with_names():
+    admins = get_admins()
+    if not admins:
+        return "👥 目前沒有管理員"
+    
+    admin_list = "👥 管理員列表：\n\n"
+    for admin_id, admin_info in admins.items():
+        try:
+            user_info = get_user_info(int(admin_id))
+            if user_info:
+                first_name = user_info.get('first_name', '')
+                last_name = user_info.get('last_name', '')
+                username = user_info.get('username', '')
+                
+                full_name = f"{first_name} {last_name}".strip() or "未知用戶"
+                username_display = f"(@{username})" if username else "(無用戶名)"
+                role = "👑 超級管理員" if admin_info.get('is_super', False) else "👤 管理員"
+                
+                admin_list += f"{role} - {full_name} {username_display}\n"
+                admin_list += f"🔢 ID: `{admin_id}`\n\n"
+            else:
+                admin_list += f"👤 未知用戶\n🔢 ID: `{admin_id}`\n\n"
+        except:
+            admin_list += f"👤 未知用戶\n🔢 ID: `{admin_id}`\n\n"
+    
+    return admin_list
+
+def get_thread_list_with_names():
+    threads = get_threads()
+    if not threads:
+        return "📋 目前沒有允許的話題"
+    
+    thread_list = "📋 允許的話題列表：\n\n"
+    for thread_key in threads.keys():
+        try:
+            chat_id, thread_id = thread_key.split('_')
+            thread_id = int(thread_id) if thread_id != '0' else 0
+            
+            chat_info = get_chat_info(chat_id)
+            chat_title = chat_info.get('title', '未知群組') if chat_info else '未知群組'
+            
+            if thread_id == 0:
+                thread_list += f"💬 主聊天室\n🏷️ 群組: {chat_title}\n🔢 識別碼: {thread_key}\n\n"
+            else:
+                thread_name = get_thread_name(chat_id, thread_id)
+                thread_list += f"💬 話題: {thread_name}\n🏷️ 群組: {chat_title}\n🔢 識別碼: {thread_key}\n\n"
+        except:
+            thread_list += f"💬 話題\n🔢 識別碼: {thread_key}\n\n"
+    
+    return thread_list
 
 # ========== Telegram API ==========
 def send_message(chat_id, text, markup=None, thread_id=None):
@@ -234,25 +326,10 @@ def handle_admin_command(text, chat_id, user_id, update=None):
             send_message(chat_id, "❌ 請提供有效的用戶ID")
     
     elif text == '/admin list_admins':
-        admins = get_admins()
-        if not admins:
-            send_message(chat_id, "👥 目前沒有管理員")
-        else:
-            msg = "👥 管理員列表：\n\n"
-            for uid, info in admins.items():
-                role = "👑 超級管理員" if info.get('is_super') else "👤 管理員"
-                msg += f"{role} - ID: {uid}\n"
-            send_message(chat_id, msg)
+        send_message(chat_id, get_admin_list_with_names())
     
     elif text == '/admin list_threads':
-        threads = get_threads()
-        if not threads:
-            send_message(chat_id, "📋 目前沒有允許的話題")
-        else:
-            msg = "📋 允許的話題列表：\n\n"
-            for key in threads:
-                msg += f"🔹 {key}\n"
-            send_message(chat_id, msg)
+        send_message(chat_id, get_thread_list_with_names())
     
     elif text.startswith('/admin logs') and is_super_admin(user_id):
         logs = get_logs()[-10:]
@@ -285,19 +362,30 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許", None, thread_id)
 
 def handle_user_command(text, chat_id, is_private, update=None):
+    # 修正：所有指令都應該在正確的話題中回覆
+    thread_id = None
+    if not is_private and update and 'message' in update:
+        thread_id = update['message'].get('message_thread_id')
+    
     if text == '/start':
-        send_message(chat_id, "🐾 歡迎使用10K DOG 官方BOT", main_menu())
+        send_message(chat_id, "🐾 歡迎使用10K DOG 官方BOT", main_menu(), thread_id)
     
     elif text == '/help':
-        send_message(chat_id, HELP_TEXT)
+        send_message(chat_id, HELP_TEXT, None, thread_id)
     
     elif text.startswith('/'):
         cmd = text[1:].lower().split(' ')[0]
         if cmd in COMMANDS:
-            thread_id = None if is_private else update['message'].get('message_thread_id')
             send_message(chat_id, COMMANDS[cmd], None, thread_id)
 
 def handle_callback(data, chat_id, user_id, message_thread_id=None):
+    # 修正：檢查群組話題權限
+    if str(chat_id).startswith('-100'):
+        thread_key = f"{chat_id}_{message_thread_id or 0}"
+        if thread_key not in get_threads() and not data.startswith(('admin_', 'main_menu', 'help')):
+            send_message(chat_id, "❌ 此話題未啟用機器人功能", None, message_thread_id)
+            return
+    
     if data in COMMANDS:
         send_message(chat_id, COMMANDS[data], None, message_thread_id)
     
@@ -311,28 +399,19 @@ def handle_callback(data, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "👑 管理員控制面板", admin_menu(user_id))
     
     elif data == 'admin_list':
-        admins = get_admins()
-        msg = "👥 管理員列表：\n\n" if admins else "👥 目前沒有管理員"
-        for uid, info in admins.items():
-            role = "👑 超級管理員" if info.get('is_super') else "👤 管理員"
-            msg += f"{role} - ID: {uid}\n"
-        send_message(chat_id, msg)
+        send_message(chat_id, get_admin_list_with_names())
     
     elif data == 'admin_query_uid':
         send_message(chat_id, "🔍 請轉發用戶訊息給我查詢 UID")
     
     elif data == 'admin_add':
-        send_message(chat_id, "➕ 請使用指令：/admin add_admin [用戶ID]")
+        send_message(chat_id, "➕ 請直接輸入要新增的用戶 UID 數字")
     
     elif data == 'admin_remove':
-        send_message(chat_id, "❌ 請使用指令：/admin remove_admin [用戶ID]")
+        send_message(chat_id, "❌ 請直接輸入要移除的用戶 UID 數字")
     
     elif data == 'admin_threads':
-        threads = get_threads()
-        msg = "📋 允許的話題列表：\n\n" if threads else "📋 目前沒有允許的話題"
-        for key in threads:
-            msg += f"🔹 {key}\n"
-        send_message(chat_id, msg)
+        send_message(chat_id, get_thread_list_with_names())
     
     elif data == 'admin_help':
         send_message(chat_id, "🛠️ 群組指令：\n/admin add_thread - 允許話題\n/admin remove_thread - 移除話題")
@@ -364,6 +443,18 @@ def handle_callback(data, chat_id, user_id, message_thread_id=None):
         except:
             send_message(chat_id, "❌ 操作失敗")
 
+# ========== 處理 UID 數字輸入 ==========
+def handle_uid_input(text, chat_id, user_id):
+    try:
+        uid = int(text.strip())
+        if add_admin(uid, user_id):
+            send_message(chat_id, f"✅ 已新增管理員: {uid}")
+            log_action(user_id, "add_admin", uid)
+        else:
+            send_message(chat_id, f"❌ 用戶 {uid} 已經是管理員")
+    except ValueError:
+        send_message(chat_id, "❌ 請輸入有效的數字 UID")
+
 # ========== 主路由 ==========
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -388,6 +479,11 @@ def webhook():
         # UID 查詢
         if 'forward_from' in msg and not text.startswith('/') and is_admin(user_id):
             handle_uid_query(update, chat_id)
+            return 'OK'
+        
+        # 管理員 UID 輸入處理
+        if is_private and is_admin(user_id) and text.strip().isdigit():
+            handle_uid_input(text, chat_id, user_id)
             return 'OK'
         
         # 權限檢查
