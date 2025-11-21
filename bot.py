@@ -292,7 +292,7 @@ def main_menu():
     return {
         "inline_keyboard": [
             [{"text": "📜 合約地址", "callback_data": "ca"}],
-            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}，{"text": "📑 社群規範", "callback_data": "rules"}],
+            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}],
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
             [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}],
             [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
