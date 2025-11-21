@@ -227,19 +227,15 @@ def create_private_admin_markup(user_id):
     
     return {"inline_keyboard": keyboard}
 
-# 群組管理指令處理
+# 群組管理指令處理 - 修正資料結構
 def handle_group_admin_command(message_text, chat_id, user_id, update):
     try:
         thread_id = update['message'].get('message_thread_id', 0)
         thread_key = f"{chat_id}_{thread_id}"
         
         if message_text == '/admin add_thread':
-            ALLOWED_THREADS[thread_key] = {
-                "chat_id": chat_id,
-                "thread_id": thread_id,
-                "added_by": user_id,
-                "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat()
-            }
+            # 儲存為 True 以保持一致性
+            ALLOWED_THREADS[thread_key] = True
             send_message(chat_id, "✅ 已允許當前話題", None, thread_id)
             log_admin_action(user_id, "add_thread", details=thread_key)
             update_allowed_threads()
@@ -302,17 +298,17 @@ def get_admin_list_with_names():
         print(f"獲取管理員列表錯誤：{e}")
         return "❌ 獲取管理員列表失敗"
 
-# 獲取話題列表 - 修正話題名稱顯示
+# 獲取話題列表 - 修正資料結構處理
 def get_thread_list_with_names():
     try:
         if not ALLOWED_THREADS:
             return "📋 目前沒有允許的話題"
         
         thread_list = "📋 允許的話題列表：\n\n"
-        for thread_key, thread_info in ALLOWED_THREADS.items():
+        for thread_key in ALLOWED_THREADS.keys():
             try:
-                chat_id = thread_info.get('chat_id', thread_key.split('_')[0])
-                thread_id = thread_info.get('thread_id', int(thread_key.split('_')[1]))
+                chat_id, thread_id = thread_key.split('_')
+                thread_id = int(thread_id) if thread_id != '0' else 0
                 
                 chat_info = get_chat_info(chat_id)
                 chat_title = chat_info.get('title', '未知群組') if chat_info else '未知群組'
@@ -585,8 +581,8 @@ def handle_admin_uid_input(message_text, chat_id, user_id):
         print(f"管理員UID輸入處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 一般用戶命令處理 - 修正群組指令處理
-def handle_user_commands(message_text, chat_id, user_id, is_private, update=None):
+# 一般用戶命令處理 - 修正參數問題
+def handle_user_commands(message_text, chat_id, user_id, is_private, update):
     try:
         if message_text == '/start':
             welcome_text = "🐾 歡迎使用10K DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
