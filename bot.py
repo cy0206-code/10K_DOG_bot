@@ -8,7 +8,8 @@ import pytz
 app = Flask(__name__)
 TOKEN = os.environ.get("BOT_TOKEN")
 SUPER_ADMIN = 8126033106
-DATA_FILE = "/tmp/admin_data.json"
+# 修改資料檔案路徑到當前工作目錄
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_data.json")
 TAIWAN_TZ = pytz.timezone('Asia/Taipei')
 
 # ========== 核心資料管理 ==========
@@ -17,9 +18,10 @@ def load_data():
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        print(f"載入資料錯誤: {e}")
     
+    # 如果檔案不存在或讀取失敗，創建預設資料
     default_data = {
         "admins": {str(SUPER_ADMIN): {"added_by": "system", "added_time": datetime.datetime.now().isoformat(), "is_super": True}},
         "allowed_threads": {},
@@ -30,9 +32,15 @@ def load_data():
 
 def save_data(data):
     try:
+        # 確保目錄存在
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        # 使用原子操作寫入，避免資料損壞
+        temp_file = DATA_FILE + ".tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        # 替換原檔案
+        os.replace(temp_file, DATA_FILE)
+        print(f"資料已儲存至: {DATA_FILE}")
     except Exception as e:
         print(f"儲存錯誤: {e}")
 
@@ -161,10 +169,11 @@ def main_menu():
     return {
         "inline_keyboard": [
             [{"text": "📜 合約地址", "callback_data": "ca"}],
-            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}],
-            [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
-            [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"} ,{"text": "@ Threads", "callback_data": "threads"}],
-            [{"text": "📋 所有可用指令", "callback_data": "help"}]
+            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}],
+            [{"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}],
+            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
+            [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}],
+            [{"text": "@ Threads", "callback_data": "threads"}, {"text": "📋 所有可用指令", "callback_data": "help"}]
         ]
     }
 
@@ -248,19 +257,11 @@ def get_admin_list_with_names():
     for admin_id, admin_info in admins.items():
         try:
             user_info = get_user_info(int(admin_id))
-            if user_info:
-                first_name = user_info.get('first_name', '')
-                last_name = user_info.get('last_name', '')
-                username = user_info.get('username', '')
-                
-                full_name = f"{first_name} {last_name}".strip() or "未知用戶"
-                username_display = f"(@{username})" if username else "(無用戶名)"
-                role = "👑 超級管理員" if admin_info.get('is_super', False) else "👤 管理員"
-                
-                admin_list += f"{role} - {full_name} {username_display}\n"
-                admin_list += f"🔢 ID: {admin_id}\n\n"  # 移除反引號
-            else:
-                admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"  # 移除反引號
+            display_name = get_display_name(user_info)
+            role = "👑 超級管理員" if admin_info.get('is_super', False) else "👤 管理員"
+            
+            admin_list += f"{role} - {display_name}\n"
+            admin_list += f"🔢 ID: {admin_id}\n\n"  # 移除反引號
         except:
             admin_list += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"  # 移除反引號
     
