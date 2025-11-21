@@ -168,16 +168,28 @@ def add_admin(admin_id, added_by):
         return True
     return False
 
-def remove_admin(admin_id):
-    """從資料庫移除管理員"""
+def remove_admin(admin_id, removed_by):
+    """從資料庫移除管理員 - 修改版：所有管理員都可以移除，但不能移除超級管理員"""
     admins = get_admins()
     admin_str = str(admin_id)
+    removed_by_str = str(removed_by)
     
-    if admin_str in admins and not admins[admin_str].get('is_super', False):
-        del admins[admin_str]
-        update_data("admins", admins)
-        return True
-    return False
+    # 檢查要刪除的對象是否存在
+    if admin_str not in admins:
+        return False, "❌ 該用戶不是管理員"
+    
+    # 檢查是否嘗試刪除超級管理員
+    if admins[admin_str].get('is_super', False):
+        return False, "❌ 無法刪除超級管理員"
+    
+    # 檢查刪除者是否有權限（必須是管理員）
+    if removed_by_str not in admins:
+        return False, "❌ 您沒有管理員權限"
+    
+    # 執行刪除
+    del admins[admin_str]
+    update_data("admins", admins)
+    return True, "✅ 已移除管理員"
 
 # ========== 話題操作 ==========
 def toggle_thread(chat_id, thread_id, add=True):
@@ -444,6 +456,11 @@ def handle_admin_command(text, chat_id, user_id, update=None):
         send_message(chat_id, "👑 管理員控制面板", admin_menu(user_id))
     
     elif text.startswith('/admin add_admin '):
+        # 只有超級管理員可以新增管理員
+        if not is_super_admin(user_id):
+            send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
+            return
+            
         try:
             new_id = int(text.split(' ')[2])
             if add_admin(new_id, user_id):
@@ -455,13 +472,13 @@ def handle_admin_command(text, chat_id, user_id, update=None):
             send_message(chat_id, "❌ 請提供有效的用戶ID")
     
     elif text.startswith('/admin remove_admin '):
+        # 所有管理員都可以移除管理員（但不能移除超級管理員）
         try:
             remove_id = int(text.split(' ')[2])
-            if remove_admin(remove_id):
-                send_message(chat_id, f"✅ 已移除管理員: {remove_id}")
+            success, message = remove_admin(remove_id, user_id)
+            send_message(chat_id, message)
+            if success:
                 log_action(user_id, "remove_admin", remove_id)
-            else:
-                send_message(chat_id, "❌ 該用戶不是管理員或是超級管理員")
         except:
             send_message(chat_id, "❌ 請提供有效的用戶ID")
     
@@ -550,7 +567,11 @@ def handle_callback(data, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "🔍 請轉發用戶訊息給我查詢 UID")
     
     elif data == 'admin_add':
-        send_message(chat_id, "➕ 請直接輸入要新增的用戶 UID 數字")
+        # 只有超級管理員可以看到新增管理員選項
+        if is_super_admin(user_id):
+            send_message(chat_id, "➕ 請直接輸入要新增的用戶 UID 數字")
+        else:
+            send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
     
     elif data == 'admin_remove':
         send_message(chat_id, "❌ 請直接輸入要移除的用戶 UID 數字")
@@ -595,11 +616,15 @@ def handle_callback(data, chat_id, user_id, message_thread_id=None):
 def handle_uid_input(text, chat_id, user_id):
     try:
         uid = int(text.strip())
-        if add_admin(uid, user_id):
-            send_message(chat_id, f"✅ 已新增管理員: {uid}")
-            log_action(user_id, "add_admin", uid)
+        # 只有超級管理員可以透過輸入 UID 新增管理員
+        if is_super_admin(user_id):
+            if add_admin(uid, user_id):
+                send_message(chat_id, f"✅ 已新增管理員: {uid}")
+                log_action(user_id, "add_admin", uid)
+            else:
+                send_message(chat_id, f"❌ 用戶 {uid} 已經是管理員")
         else:
-            send_message(chat_id, f"❌ 用戶 {uid} 已經是管理員")
+            send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
     except ValueError:
         send_message(chat_id, "❌ 請輸入有效的數字 UID")
 
