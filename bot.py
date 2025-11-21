@@ -151,12 +151,16 @@ def update_allowed_threads():
     except Exception as e:
         print(f"更新話題錯誤：{e}")
 
-# 權限檢查函數 - 修正群組指令問題
+# 權限檢查函數 - 簡化邏輯
 def should_process_message(update, user_id, message_text):
     try:
+        # 私聊永遠允許
         chat_id = update['message']['chat']['id']
-        thread_id = update['message'].get('message_thread_id', 0)
+        if not str(chat_id).startswith('-100'):
+            return True
         
+        # 群組中檢查話題權限
+        thread_id = update['message'].get('message_thread_id', 0)
         thread_key = f"{chat_id}_{thread_id}"
         
         # 管理員的管理指令永遠允許
@@ -227,7 +231,7 @@ def create_private_admin_markup(user_id):
     
     return {"inline_keyboard": keyboard}
 
-# 群組管理指令處理 - 修正資料結構
+# 群組管理指令處理
 def handle_group_admin_command(message_text, chat_id, user_id, update):
     try:
         thread_id = update['message'].get('message_thread_id', 0)
@@ -298,7 +302,7 @@ def get_admin_list_with_names():
         print(f"獲取管理員列表錯誤：{e}")
         return "❌ 獲取管理員列表失敗"
 
-# 獲取話題列表 - 修正資料結構處理
+# 獲取話題列表
 def get_thread_list_with_names():
     try:
         if not ALLOWED_THREADS:
@@ -422,7 +426,7 @@ def handle_private_admin_command(message_text, chat_id, user_id):
         print(f"私聊管理員命令錯誤：{e}")
         send_message(chat_id, "❌ 命令處理失敗，請稍後再試")
 
-# 超級管理員命令 - 修正操作紀錄顯示
+# 超級管理員命令
 def handle_super_admin_commands(message_text, chat_id, user_id):
     try:
         if message_text.startswith('/admin logs'):
@@ -494,7 +498,7 @@ def handle_uid_query(update, chat_id):
         print(f"UID查詢錯誤：{e}")
         send_message(chat_id, "❌ 查詢失敗，請確保轉發的是用戶訊息且隱私設定允許")
 
-# UID 查詢按鈕處理函數 - 修正複製功能
+# UID 查詢按鈕處理函數
 def handle_uid_query_buttons(callback_data, chat_id, user_id):
     try:
         if callback_data.startswith('copy_uid_'):
@@ -517,7 +521,7 @@ def handle_uid_query_buttons(callback_data, chat_id, user_id):
         print(f"UID按鈕處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 私聊管理員按鈕處理 - 修正操作紀錄按鈕
+# 私聊管理員按鈕處理
 def handle_private_admin_button(callback_data, chat_id, user_id):
     try:
         if callback_data == 'private_list_admins':
@@ -581,32 +585,46 @@ def handle_admin_uid_input(message_text, chat_id, user_id):
         print(f"管理員UID輸入處理錯誤：{e}")
         send_message(chat_id, "❌ 操作失敗，請稍後再試")
 
-# 一般用戶命令處理 - 修正參數問題
+# 一般用戶命令處理 - 修正邏輯
 def handle_user_commands(message_text, chat_id, user_id, is_private, update):
     try:
+        print(f"處理一般用戶命令: {message_text}")
+        
         if message_text == '/start':
             welcome_text = "🐾 歡迎使用10K DOG 官方BOT\n請選擇下方按鈕或輸入指令獲取資訊！"
             send_message(chat_id, welcome_text, create_reply_markup())
             
         elif message_text == '/help':
-            help_text = "📋 可用指令：/start, /help, /ca, /web, /announcements, /rules, /jup_lock, /pumpswap, /invitation_code, /x, /dc, /threads"
+            help_text = """📋 指令清單：
+
+/start - ✅ 開啟選單
+/help - 📋 顯示指令清單
+/ca - 📜 合約地址
+/web - 🌐 官方網站
+/announcements - 📣 社群公告
+/rules - 📑 社群規範
+/jup_lock - 🔐 鎖倉資訊
+/pumpswap - ⛏️ 流動性礦池教學
+/invitation_code - 🔗 註冊連結
+/x - 𝕏 Twitter推特
+/dc - 💬 Discord社群
+/threads - @ Threads"""
             send_message(chat_id, help_text)
             
         elif message_text.startswith('/'):
             command = message_text[1:].lower().split(' ')[0]
+            print(f"檢查命令: {command}")
             if command in COMMANDS:
-                # 在群組中需要檢查話題權限
-                if not is_private:
-                    if not should_process_message(update, user_id, message_text):
-                        return
+                print(f"找到命令: {command} -> {COMMANDS[command]}")
                 send_message(chat_id, COMMANDS[command])
             else:
-                pass
+                print(f"未知命令: {command}")
+                # 未知命令不回應
                 
     except Exception as e:
         print(f"一般用戶命令錯誤：{e}")
 
-# 主 webhook 處理
+# 主 webhook 處理 - 修正邏輯
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -619,6 +637,8 @@ def webhook():
             chat_id = update['callback_query']['message']['chat']['id']
             user_id = update['callback_query']['from']['id']
             is_private = not str(chat_id).startswith('-100')
+            
+            print(f"處理回調: {callback_data}")
             
             if callback_data in COMMANDS:
                 send_message(chat_id, COMMANDS[callback_data])
@@ -640,7 +660,7 @@ def webhook():
             user_id = update['message']['from']['id']
             is_private = not str(chat_id).startswith('-100')
             
-            print(f"處理訊息：{message_text} from {user_id} in {chat_id}")
+            print(f"處理訊息：{message_text} from {user_id} in {chat_id}, 私聊: {is_private}")
             
             # UID 查詢處理
             if ('forward_from' in update['message'] and 
@@ -648,12 +668,13 @@ def webhook():
                 handle_uid_query(update, chat_id)
                 return 'OK'
             
-            # 權限檢查
-            if message_text.startswith('/admin') and not is_admin(user_id):
+            # 權限檢查 - 私聊永遠允許，群組需要檢查
+            if not is_private and not should_process_message(update, user_id, message_text):
+                print(f"訊息被過濾: {message_text}")
                 return 'OK'
             
             # 管理員命令
-            if is_admin(user_id):
+            if is_admin(user_id) and message_text.startswith('/admin'):
                 if is_private:
                     if message_text == '/admin':
                         menu_text = "👑 管理員控制面板"
@@ -671,6 +692,7 @@ def webhook():
             
             # 一般用戶命令
             else:
+                print(f"處理一般用戶命令: {message_text}")
                 handle_user_commands(message_text, chat_id, user_id, is_private, update)
         
         return 'OK'
