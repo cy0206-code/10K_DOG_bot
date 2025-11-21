@@ -8,41 +8,114 @@ import pytz
 app = Flask(__name__)
 TOKEN = os.environ.get("BOT_TOKEN")
 SUPER_ADMIN = 8126033106
-# 修改資料檔案路徑到當前工作目錄
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_data.json")
+GIST_TOKEN = os.environ.get("GIST_TOKEN")  # GitHub Personal Access Token
+GIST_ID = os.environ.get("GIST_ID", "")  # 已有的 Gist ID（可選）
 TAIWAN_TZ = pytz.timezone('Asia/Taipei')
 
-# ========== 核心資料管理 ==========
+# Gist 檔案名稱
+GIST_FILENAME = "10k_dog_bot_data.json"
+
+# ========== Gist 資料管理 ==========
 def load_data():
-    try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"載入資料錯誤: {e}")
+    """從 Gist 載入資料"""
+    if not GIST_TOKEN:
+        print("❌ 未設定 GIST_TOKEN，使用記憶體儲存")
+        return create_default_data()
     
-    # 如果檔案不存在或讀取失敗，創建預設資料
+    try:
+        headers = {
+            'Authorization': f'token {GIST_TOKEN}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        # 如果有 GIST_ID，直接讀取
+        if GIST_ID:
+            url = f'https://api.github.com/gists/{GIST_ID}'
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                gist_data = response.json()
+                content = gist_data['files'][GIST_FILENAME]['content']
+                print("✅ 從 Gist 載入資料成功")
+                return json.loads(content)
+        
+        # 搜尋現有的 Gist
+        url = 'https://api.github.com/gists'
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            gists = response.json()
+            for gist in gists:
+                if GIST_FILENAME in gist['files']:
+                    # 設定全域 GIST_ID
+                    global GIST_ID
+                    GIST_ID = gist['id']
+                    content = gist['files'][GIST_FILENAME]['content']
+                    print(f"✅ 找到現有 Gist: {GIST_ID}")
+                    return json.loads(content)
+        
+        # 沒有找到現有 Gist，創建新的
+        print("❌ 未找到現有 Gist，創建新資料")
+        return create_default_data()
+            
+    except Exception as e:
+        print(f"❌ 載入資料錯誤: {e}")
+        return create_default_data()
+
+def save_data(data):
+    """儲存資料到 Gist"""
+    if not GIST_TOKEN:
+        print("❌ 未設定 GIST_TOKEN，無法持久化儲存")
+        return
+    
+    try:
+        headers = {
+            'Authorization': f'token {GIST_TOKEN}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        # 準備檔案內容
+        files = {
+            GIST_FILENAME: {
+                "content": json.dumps(data, ensure_ascii=False, indent=2)
+            }
+        }
+        
+        # 如果有 GIST_ID，更新現有 Gist
+        if GIST_ID:
+            url = f'https://api.github.com/gists/{GIST_ID}'
+            payload = {"files": files}
+            response = requests.patch(url, headers=headers, json=payload, timeout=10)
+        else:
+            # 創建新 Gist
+            url = 'https://api.github.com/gists'
+            payload = {
+                "public": False,
+                "description": "10K DOG Bot Data Storage",
+                "files": files
+            }
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            if response.status_code == 201:
+                gist_data = response.json()
+                global GIST_ID
+                GIST_ID = gist_data['id']
+                print(f"✅ 創建新 Gist: {GIST_ID}")
+        
+        if response.status_code in [200, 201]:
+            print("✅ 資料已儲存至 Gist")
+        else:
+            print(f"❌ 儲存失敗: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        print(f"❌ 儲存錯誤: {e}")
+
+def create_default_data():
+    """創建預設資料"""
     default_data = {
         "admins": {str(SUPER_ADMIN): {"added_by": "system", "added_time": datetime.datetime.now().isoformat(), "is_super": True}},
         "allowed_threads": {},
         "admin_logs": []
     }
-    save_data(default_data)
+    save_data(default_data)  # 立即儲存到 Gist
     return default_data
-
-def save_data(data):
-    try:
-        # 確保目錄存在
-        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        # 使用原子操作寫入，避免資料損壞
-        temp_file = DATA_FILE + ".tmp"
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        # 替換原檔案
-        os.replace(temp_file, DATA_FILE)
-        print(f"資料已儲存至: {DATA_FILE}")
-    except Exception as e:
-        print(f"儲存錯誤: {e}")
 
 # 初始化資料
 data = load_data()
