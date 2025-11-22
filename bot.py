@@ -542,10 +542,19 @@ def handle_user_command(text, chat_id, is_private, update=None):
             send_message(chat_id, COMMANDS[cmd], None, thread_id)
 
 def handle_callback(data, chat_id, user_id, message_thread_id=None):
-    # 修正：檢查群組話題權限
-    if str(chat_id).startswith('-100'):
+    is_private = not str(chat_id).startswith('-100')
+    
+    # 重要修正：管理員相關功能嚴格限制在私聊中
+    if data.startswith('admin_') and not is_private:
+        # 群組中點擊管理員按鈕，靜默忽略或提示
+        if message_thread_id:
+            send_message(chat_id, "❌ 管理員功能僅在私聊中可用", None, message_thread_id)
+        return
+    
+    # 修正：檢查群組話題權限（僅對非管理員功能）
+    if not is_private:
         thread_key = f"{chat_id}_{message_thread_id or 0}"
-        if thread_key not in get_threads() and not data.startswith(('admin_', 'main_menu', 'help')):
+        if thread_key not in get_threads() and not data.startswith(('main_menu', 'help')):
             send_message(chat_id, "❌ 此話題未啟用機器人功能", None, message_thread_id)
             return
     
@@ -639,7 +648,14 @@ def webhook():
         if 'callback_query' in update:
             cb = update['callback_query']
             data, chat_id, user_id = cb['data'], cb['message']['chat']['id'], cb['from']['id']
-            thread_id = None if not str(chat_id).startswith('-100') else cb['message'].get('message_thread_id')
+            is_private = not str(chat_id).startswith('-100')
+            
+            # 重要修正：管理員回調嚴格限制在私聊中
+            if data.startswith('admin_') and not is_private:
+                answer_callback(cb['id'])
+                return 'OK'
+                
+            thread_id = None if is_private else cb['message'].get('message_thread_id')
             
             handle_callback(data, chat_id, user_id, thread_id)
             answer_callback(cb['id'])
@@ -651,12 +667,12 @@ def webhook():
             text, chat_id, user_id = msg['text'], msg['chat']['id'], msg['from']['id']
             is_private = not str(chat_id).startswith('-100')
             
-            # UID 查詢
-            if 'forward_from' in msg and not text.startswith('/') and is_admin(user_id):
+            # 重要修正：UID 查詢嚴格限制在私聊中
+            if is_private and 'forward_from' in msg and not text.startswith('/') and is_admin(user_id):
                 handle_uid_query(update, chat_id)
                 return 'OK'
             
-            # 管理員 UID 輸入處理
+            # 管理員 UID 輸入處理 - 嚴格限制在私聊中
             if is_private and is_admin(user_id) and text.strip().isdigit():
                 handle_uid_input(text, chat_id, user_id)
                 return 'OK'
