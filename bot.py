@@ -263,6 +263,7 @@ COMMANDS = {
     "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "pumpswap": "https://t.me/tenkdogcrypto/72",
     "invitation_code": "https://t.me/tenthousandcommunity/10405",
+    "vote": "https://t.me/tenthousandcommunity/1/20805",
     "x": "https://x.com/10000timesto1",
     "dc": "https://discord.com/invite/10kdog",
     "ig": "https://www.instagram.com/_10kdog_/?igsh=MWIzNmp3OTBzeGIwdQ%3D%3D#",
@@ -281,6 +282,7 @@ HELP_TEXT = """📋 指令清單：
 /jup_lock - 🔐 鎖倉資訊
 /pumpswap - ⛏️ 流動性礦池教學
 /invitation_code - 🔗 註冊連結
+/vote - 🗳️投票網站
 /x - 𝕏 Twitter推特
 /dc - 💬 Discord社群
 /yt - 🎬 YouTube頻道
@@ -294,7 +296,7 @@ def main_menu():
             [{"text": "📜 合約地址", "callback_data": "ca"}],
             [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}],
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
-            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}],
+            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️投票網站", "callback_data": "vote"}],
             [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
             [{"text": "🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦", "callback_data": "ig"}, {"text": "🎬 YouTube", "callback_data": "yt"}, {"text": "📋 指令清單", "callback_data": "help"}]
         ]
