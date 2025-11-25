@@ -268,7 +268,14 @@ COMMANDS = {
     "dc": "https://discord.com/invite/10kdog",
     "ig": "https://www.instagram.com/_10kdog_/?igsh=MWIzNmp3OTBzeGIwdQ%3D%3D#",
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ==",
-    "yt": "https://youtube.com/@10kdoggoes1?si=-g8DO5ZDnHrL7kR4"
+    "yt": "https://youtube.com/@10kdoggoes1?si=-g8DO5ZDnHrL7kR4",
+    "slogan": """儘管失敗一萬次，只要贏一次，那就足夠
+
+1 time winning is greater than 10,000 times failure
+
+1回の勝利は10,000回の失敗に勝る
+
+만 번 실패하더라도 단 한 번만 이겨도 족하다"""
 }
 
 HELP_TEXT = """📋 指令清單：
@@ -279,6 +286,7 @@ HELP_TEXT = """📋 指令清單：
 /web - 🌐 官方網站
 /announcements - 📣 社群公告
 /rules - 📑 社群規範
+/slogan - 🗣️精神標語
 /jup_lock - 🔐 鎖倉資訊
 /pumpswap - ⛏️ 流動性礦池教學
 /invitation_code - 🔗 註冊連結
@@ -297,6 +305,7 @@ def main_menu():
             [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}],
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}],
             [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️投票排行網站", "callback_data": "vote"}],
+            [{"text": "🗣️ 精神標語", "callback_data": "slogan"}],
             [{"text": "𝕏 Twitter推特", "callback_data": "x"}, {"text": "💬 Discord", "callback_data": "dc"}, {"text": "@ Threads", "callback_data": "threads"}],
             [{"text": "🅾 𝐈𝐧𝐬𝐭𝐚𝐠𝐫𝐚𝐦", "callback_data": "ig"}, {"text": "🎬 YouTube", "callback_data": "yt"}, {"text": "📋 指令清單", "callback_data": "help"}]
         ]
