@@ -269,7 +269,10 @@ COMMANDS = {
     "ig": "https://www.instagram.com/_10kdog_/?igsh=MWIzNmp3OTBzeGIwdQ%3D%3D#",
     "threads": "https://www.threads.com/@_10kdog_?igshid=NTc4MTIwNjQ2YQ==",
     "yt": "https://youtube.com/@10kdoggoes1?si=-g8DO5ZDnHrL7kR4",
-    "buy": ["https://t.me/tenkdogcrypto/141","https://t.me/tenkdogcrypto/142"],
+    "buy": """第一段，買SOL+開Phantom:
+https://t.me/tenkdogcrypto/141
+第二段，用SOL買10K DOG:
+https://t.me/tenkdogcrypto/142""",
     "slogan": """儘管失敗一萬次，只要贏一次，那就足夠
 
 1 time winning is greater than 10,000 times failure
