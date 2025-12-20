@@ -26,6 +26,96 @@ KEY_THREADS_SPARKSIGN = "allowed_threads_sparksign"
 KEY_SPARKSIGN_SETTINGS = "sparksign_settings"
 KEY_LOGS = "admin_logs"
 
+# ================== Premium Emoji (Jarvis only) ==================
+# 目的：
+# 1) 管理員私訊丟「Telegram Premium Emoji」給 Jarvis，可直接回覆 custom_emoji_id（純 ID）
+# 2) 日後若你想把 Jarvis 文字內的某些 emoji 升級成 Premium Emoji：
+#    - 只要在 PREMIUM_EMOJI_MAP 內填入對應 custom_emoji_id 即可
+#    - 若該 emoji 沒填（空字串）或不在 map，會自動使用原本 emoji（不會壞、不會報錯）
+#
+# 注意：InlineKeyboardButton 按鈕文字不支援 Premium custom emoji（Telegram 限制）
+#       本功能只針對訊息文字 / caption（sendMessage / sendPhoto / sendVideo 的 caption）
+#
+# 你目前只需要針對「Jarvis 現在實際用到的 emoji」放在這裡即可
+PREMIUM_EMOJI_MAP = {
+    # --- Jarvis UI / Admin / Logs / Lists ---
+    "🤖": "",
+    "👑": "",
+    "👥": "",
+    "👤": "",
+    "🔍": "",
+    "🔢": "",
+    "➕": "",
+    "❌": "",
+    "✅": "",
+    "📋": "",
+    "📊": "",
+    "🛠️": "",
+    "🔙": "",
+    "✨": "",
+    "💬": "",
+    "🏷️": "",
+    "⏰": "",
+    "📣": "",
+    "📑": "",
+    "🌐": "",
+    "🔐": "",
+    "🔗": "",
+    "💲": "",
+    "🗳️": "",
+    "➡️": "",
+    "⛏️": "",
+}
+
+def apply_premium_emoji_entities(text: str):
+    """
+    把文字中出現、且 PREMIUM_EMOJI_MAP 內有填 custom_emoji_id 的 emoji
+    轉成 Telegram entities: [{type:'custom_emoji', offset, length, custom_emoji_id}, ...]
+    - 若 emoji 沒設定 id（空字串）→ 不轉換，保留原本 emoji
+    - 回傳: (text, entities or None)
+    """
+    if not text:
+        return text, None
+
+    entities = []
+    for emoji, custom_id in PREMIUM_EMOJI_MAP.items():
+        if not custom_id:
+            continue
+        start = 0
+        while True:
+            idx = text.find(emoji, start)
+            if idx == -1:
+                break
+            entities.append(
+                {
+                    "type": "custom_emoji",
+                    "offset": idx,
+                    "length": len(emoji),
+                    "custom_emoji_id": custom_id,
+                }
+            )
+            start = idx + len(emoji)
+
+    return text, entities if entities else None
+
+
+def extract_first_custom_emoji_id(message: dict):
+    """
+    從 message.entities / message.caption_entities 找第一個 custom_emoji 的 custom_emoji_id
+    找不到回傳 None
+    """
+    if not isinstance(message, dict):
+        return None
+
+    for key in ("entities", "caption_entities"):
+        ents = message.get(key) or []
+        if not isinstance(ents, list):
+            continue
+        for ent in ents:
+            if isinstance(ent, dict) and ent.get("type") == "custom_emoji" and ent.get("custom_emoji_id"):
+                return ent.get("custom_emoji_id")
+    return None
+
 
 # ================== Gist Data Management ==================
 def get_default_data():
@@ -368,6 +458,7 @@ def admin_menu(user_id):
         [{"text": "➕ 新增管理員", "callback_data": "admin_add"}, {"text": "❌ 移除管理員", "callback_data": "admin_remove"}],
         [{"text": "📋 Jarvis 話題列表", "callback_data": "admin_threads_jarvis"},
          {"text": "✨ SparkSign 話題列表", "callback_data": "admin_threads_sparksign"}],
+        [{"text": "🧩 取得 Premium Emoji ID", "callback_data": "admin_get_premium_emoji_id"}],
         [{"text": "🛠️ 群組指令說明", "callback_data": "admin_help"}],
     ]
     if is_super_admin(user_id):
@@ -378,14 +469,21 @@ def admin_menu(user_id):
 
 
 # ================== Telegram API helpers ==================
-def send_message(chat_id, text, markup=None, thread_id=None):
+def send_message(chat_id, text, markup=None, thread_id=None, parse_mode=None, entities=None):
+    """
+    Jarvis 原本 send_message 行為不變；新增 entities/parse_mode 支援以便未來 Premium emoji.
+    - 目前程式沒有啟用 apply_premium_emoji_entities，所以行為仍跟以前一樣
+    """
     try:
         payload = {"chat_id": chat_id, "text": text}
-        # allow 0 explicitly
         if thread_id is not None:
             payload["message_thread_id"] = thread_id
         if markup:
             payload["reply_markup"] = json.dumps(markup)
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if entities:
+            payload["entities"] = entities
         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload, timeout=8)
     except Exception as e:
         print(f"傳送訊息錯誤: {e}")
@@ -504,6 +602,19 @@ def get_thread_list_with_names(scope="jarvis"):
     return msg
 
 
+# ================== Premium Emoji ID feature ==================
+def handle_premium_emoji_id_message(msg, chat_id):
+    """
+    管理員在私聊丟 Premium Emoji（custom emoji）給 Jarvis，
+    Jarvis 回覆 custom_emoji_id（純 ID）
+    """
+    emoji_id = extract_first_custom_emoji_id(msg)
+    if emoji_id:
+        send_message(chat_id, emoji_id)
+        return True
+    return False
+
+
 # ================== Handlers ==================
 def handle_uid_query(update, chat_id):
     try:
@@ -576,7 +687,6 @@ def handle_admin_command(text, chat_id, user_id):
         send_message(chat_id, get_admin_list_with_names())
 
     elif text == "/admin list_threads":
-        # Keep as Jarvis threads list (private chat use)
         send_message(chat_id, get_thread_list_with_names("jarvis"))
 
     elif text.startswith("/admin logs") and is_super_admin(user_id):
@@ -649,13 +759,11 @@ def handle_user_command(text, chat_id, is_private, update=None):
 def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
     is_private = not str(chat_id).startswith("-100")
 
-    # Admin callbacks only in private chat
     if data_cb.startswith("admin_") and not is_private:
         if message_thread_id is not None:
             send_message(chat_id, "❌ 管理員功能僅在私聊中可用", None, message_thread_id)
         return
 
-    # Group: require Jarvis enabled thread for non-basic actions
     if not is_private:
         thread_key = f"{chat_id}_{message_thread_id or 0}"
         if thread_key not in get_threads("jarvis") and data_cb not in ("main_menu", "help"):
@@ -694,6 +802,13 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
 
     elif data_cb == "admin_threads_sparksign":
         send_message(chat_id, get_thread_list_with_names("sparksign"))
+
+    elif data_cb == "admin_get_premium_emoji_id":
+        send_message(
+            chat_id,
+            "請直接傳送一個 Telegram Premium Emoji 給我，我會回覆它的 custom_emoji_id（純 ID）。\n"
+            "注意：一般 emoji 不會有 ID。"
+        )
 
     elif data_cb == "admin_help":
         send_message(
@@ -752,7 +867,6 @@ def webhook():
             user_id = cb["from"]["id"]
             is_private = not str(chat_id).startswith("-100")
 
-            # Admin callbacks blocked in groups
             if data_cb.startswith("admin_") and not is_private:
                 answer_callback(cb["id"])
                 return "OK"
@@ -762,36 +876,44 @@ def webhook():
             answer_callback(cb["id"])
             return "OK"
 
-        # Text messages
-        if "message" in update and "text" in update["message"]:
+        # Messages (text or premium emoji)
+        if "message" in update:
             msg = update["message"]
-            text = msg["text"]
             chat_id = msg["chat"]["id"]
             user_id = msg["from"]["id"]
             is_private = not str(chat_id).startswith("-100")
+            text = msg.get("text", "")
 
-            # Private: forward-from UID lookup (admins only)
-            if is_private and "forward_from" in msg and not text.startswith("/") and is_admin(user_id):
-                handle_uid_query(update, chat_id)
-                return "OK"
+            # ===== Premium Emoji ID：管理員私聊丟 Premium Emoji 直接回覆 ID =====
+            #（無需先按面板按鈕；你也可按「🧩 取得 Premium Emoji ID」再傳）
+            if is_private and is_admin(user_id):
+                if handle_premium_emoji_id_message(msg, chat_id):
+                    return "OK"
 
-            # Private: numeric UID input (admins only)
-            if is_private and is_admin(user_id) and text.strip().isdigit():
-                handle_uid_input(text, chat_id, user_id)
-                return "OK"
+            # Text messages only below
+            if "text" in msg:
+                # Private: forward-from UID lookup (admins only)
+                if is_private and "forward_from" in msg and not text.startswith("/") and is_admin(user_id):
+                    handle_uid_query(update, chat_id)
+                    return "OK"
 
-            # Permission check for groups
-            if not is_private and not should_process(update, user_id, text):
-                return "OK"
+                # Private: numeric UID input (admins only)
+                if is_private and is_admin(user_id) and text.strip().isdigit():
+                    handle_uid_input(text, chat_id, user_id)
+                    return "OK"
 
-            # Admin commands
-            if is_admin(user_id) and text.startswith("/admin"):
-                if is_private:
-                    handle_admin_command(text, chat_id, user_id)
+                # Permission check for groups
+                if not is_private and not should_process(update, user_id, text):
+                    return "OK"
+
+                # Admin commands
+                if is_admin(user_id) and text.startswith("/admin"):
+                    if is_private:
+                        handle_admin_command(text, chat_id, user_id)
+                    else:
+                        handle_group_admin(text, chat_id, user_id, update)
                 else:
-                    handle_group_admin(text, chat_id, user_id, update)
-            else:
-                handle_user_command(text, chat_id, is_private, update)
+                    handle_user_command(text, chat_id, is_private, update)
 
         return "OK"
     except Exception as e:
