@@ -30,7 +30,7 @@ KEY_THREADS_SPARKSIGN = "allowed_threads_sparksign"
 KEY_SPARKSIGN_SETTINGS = "sparksign_settings"
 KEY_LOGS = "admin_logs"
 
-# ✅ Link moderation (NEW)
+# ✅ Link moderation
 KEY_LINK_SETTINGS = "link_settings"       # { chat_id: { enabled: bool, mute_days: int, third_action: "kick"|"ban" } }
 KEY_LINK_WHITELIST = "link_whitelist"     # { chat_id: { user_id: {added_by, added_time} } }
 KEY_LINK_VIOLATIONS = "link_violations"   # { chat_id: { user_id: {count:int, last_time:iso} } }
@@ -77,7 +77,7 @@ def extract_first_custom_emoji_id(message: dict):
     return None
 
 
-# ================== Gist Data Cache (reduce roundtrips) ==================
+# ================== Gist Data Cache ==================
 DATA = {}
 DATA_CACHE = {"ts": 0.0}
 DATA_TTL_SEC = 6.0
@@ -97,7 +97,6 @@ def get_default_data():
         KEY_THREADS_SPARKSIGN: {},
         KEY_SPARKSIGN_SETTINGS: {},
         KEY_LOGS: [],
-        # ✅ new keys
         KEY_LINK_SETTINGS: {},
         KEY_LINK_WHITELIST: {},
         KEY_LINK_VIOLATIONS: {},
@@ -122,7 +121,6 @@ def _ensure_defaults(loaded: dict) -> dict:
     loaded.setdefault(KEY_LOGS, [])
     loaded.setdefault(KEY_ADMINS, get_default_data()[KEY_ADMINS])
 
-    # ✅ link moderation defaults
     loaded.setdefault(KEY_LINK_SETTINGS, {})
     loaded.setdefault(KEY_LINK_WHITELIST, {})
     loaded.setdefault(KEY_LINK_VIOLATIONS, {})
@@ -275,7 +273,6 @@ def get_threads(scope: str):
     return {}
 
 
-# ✅ FIX: must return list
 def get_logs():
     refresh_data()
     v = DATA.get(KEY_LOGS, [])
@@ -327,8 +324,9 @@ def remove_admin(admin_id: int, removed_by: int):
 
     if s not in admins:
         return False, "❌ 該用戶不是管理員"
+    # 不顯示「超級」字樣，但保留保護邏輯：管理員不能移除 SUPER_ADMIN
     if admins[s].get("is_super", False):
-        return False, "❌ 無法刪除超級管理員"
+        return False, "❌ 無法移除此管理員"
     if rb not in admins:
         return False, "❌ 您沒有管理員權限"
 
@@ -429,6 +427,17 @@ def get_display_name(user_info):
     if username:
         return f"@{username}"
     return "未知用戶"
+
+
+def group_user_label(user_id: int) -> str:
+    """
+    群組內顯示用：永不顯示 UID
+    """
+    try:
+        uinfo = get_user_info(int(user_id))
+        return get_display_name(uinfo) if uinfo else "未知用戶"
+    except:
+        return "未知用戶"
 
 
 def get_chat_info(chat_id):
@@ -540,7 +549,7 @@ def should_process(update, user_id, text):
     if not str(chat_id).startswith("-100"):
         return True
 
-    # Group admin commands always allowed (naming)
+    # Group admin commands always allowed
     admin_cmds = {
         "/admin add_Jarvis",
         "/admin remove_Jarvis",
@@ -728,6 +737,7 @@ def clear_violation(chat_id: int, user_id: int):
 
 
 def list_violations_text(chat_id: int, limit: int = 50) -> str:
+    # 私聊管理員看的：允許顯 UID（你說沒差）
     vio = get_link_violations_map()
     ck = _chat_key(chat_id)
     m = vio.get(ck) or {}
@@ -759,6 +769,7 @@ def list_violations_text(chat_id: int, limit: int = 50) -> str:
 
 
 def whitelist_text(chat_id: int, limit: int = 60) -> str:
+    # 私聊管理員看的：允許顯 UID（你說沒差），但會多顯示加入者
     wl = get_link_whitelist_map()
     ck = _chat_key(chat_id)
     m = wl.get(ck) or {}
@@ -774,16 +785,32 @@ def whitelist_text(chat_id: int, limit: int = 60) -> str:
     lines = ["✅ 白名單成員\n"]
     for added_time, uid, rec in items:
         name = ""
+        adder = ""
         try:
             uinfo = get_user_info(int(uid))
             name = get_display_name(uinfo) if uinfo else ""
         except:
             name = ""
+        try:
+            adder_info = get_user_info(int(rec.get("added_by", 0)))
+            adder = get_display_name(adder_info) if adder_info else ""
+        except:
+            adder = ""
+
         if name:
-            lines.append(f"• {name}\n  🔢 UID: {uid} | ⏰ {added_time}")
+            lines.append(
+                f"• {name}\n"
+                f"  🔢 UID: {uid}\n"
+                f"  👤 加入者: {adder or rec.get('added_by', '')}\n"
+                f"  ⏰ {added_time}"
+            )
         else:
-            lines.append(f"• 🔢 UID: {uid} | ⏰ {added_time}")
-    return "\n".join(lines)
+            lines.append(
+                f"• 🔢 UID: {uid}\n"
+                f"  👤 加入者: {adder or rec.get('added_by', '')}\n"
+                f"  ⏰ {added_time}"
+            )
+    return "\n\n".join(lines)
 
 
 def should_bypass_link_rule(chat_id: int, user_id: int) -> bool:
@@ -798,6 +825,9 @@ def should_bypass_link_rule(chat_id: int, user_id: int) -> bool:
 
 
 def apply_link_moderation(msg: dict) -> bool:
+    """
+    群組內處置：一律不顯 UID
+    """
     try:
         chat_id = int(msg["chat"]["id"])
         user_id = int((msg.get("from") or {}).get("id"))
@@ -822,27 +852,51 @@ def apply_link_moderation(msg: dict) -> bool:
         except:
             pass
 
+        offender = group_user_label(user_id)
         count = inc_violation(chat_id, user_id)
-
         thread_id = msg.get("message_thread_id", None)
-        if count <= 1:
-            send_message(chat_id, "⚠️（第1次違規警告1次，未加入白名單前禁止發送連結）", thread_id=thread_id)
+
+        if count == 1:
+            send_message(
+                chat_id,
+                "⚠️ 連結違規（第 1 次）\n\n"
+                f"• 用戶：{offender}\n"
+                "• 處置：警告\n"
+                "• 提醒：未加入白名單前請勿發送連結",
+                thread_id=thread_id
+            )
             return True
 
         if count == 2:
             mute_days = int(settings.get("mute_days", 1) or 1)
             until_ts = int(_now()) + mute_days * 86400
             restrict_member(chat_id, user_id, until_ts=until_ts)
-            send_message(chat_id, f"🔇（第2次違規禁言{mute_days}天，未加入白名單前禁止發送連結）", thread_id=thread_id)
+            send_message(
+                chat_id,
+                "🔇 連結違規（第 2 次）\n\n"
+                f"• 用戶：{offender}\n"
+                f"• 處置：禁言 {mute_days} 天\n"
+                "• 提醒：未加入白名單前請勿發送連結",
+                thread_id=thread_id
+            )
             return True
 
         action = settings.get("third_action", "kick")
         if action == "ban":
             ban_member(chat_id, user_id)
-            send_message(chat_id, "⛔（第三次違規封鎖，未加入白名單前禁止發送連結）", thread_id=thread_id)
+            action_text = "封鎖"
         else:
             kick_member_no_ban(chat_id, user_id)
-            send_message(chat_id, "👢（第三次違規踢出群組，未加入白名單前禁止發送連結）", thread_id=thread_id)
+            action_text = "踢出群組"
+
+        send_message(
+            chat_id,
+            "⛔ 連結違規（第 3 次）\n\n"
+            f"• 用戶：{offender}\n"
+            f"• 處置：{action_text}\n"
+            "• 提醒：未加入白名單前請勿發送連結",
+            thread_id=thread_id
+        )
 
         clear_violation(chat_id, user_id)
         return True
@@ -863,10 +917,10 @@ def get_admin_list_with_names():
         try:
             u = get_user_info(int(admin_id))
             name = get_display_name(u)
-            role = "👑 超級管理員" if info.get("is_super", False) else "👤 管理員"
-            msg += f"{role} - {name}\n🔢 ID: {admin_id}\n\n"
+            # 不做「超級」顯示
+            msg += f"👤 管理員 - {name}\n🔢 ID: {admin_id}\n\n"
         except:
-            msg += f"👤 未知用戶\n🔢 ID: {admin_id}\n\n"
+            msg += f"👤 管理員 - 未知用戶\n🔢 ID: {admin_id}\n\n"
     return msg
 
 
@@ -1075,7 +1129,6 @@ def admin_admin_panel(user_id: int):
     return {"inline_keyboard": kb}
 
 
-# ✅ 2x2 compact layout + default group title
 def admin_group_panel(user_id: int):
     chat_id = _get_active_chat_id(user_id)
     title = _chat_title(chat_id)
@@ -1190,69 +1243,127 @@ def handle_admin_command(text, chat_id, user_id):
             pass
 
 
+def _delete_group_admin_cmd(chat_id: int, update: dict):
+    try:
+        mid = int(((update or {}).get("message") or {}).get("message_id"))
+        if mid:
+            delete_message(chat_id, mid)
+    except:
+        pass
+
+
 def handle_group_admin(text, chat_id, user_id, update):
-    thread_id = update["message"].get("message_thread_id", 0)
+    """
+    群組內管理指令：
+    - 會刪除管理員輸入的 /admin 指令訊息
+    - 群組回饋一律不顯 UID（改用顯示名稱）
+    - 白名單會記錄加入者（已由 whitelist_add 寫入 added_by）
+    """
+    thread_id = (update.get("message") or {}).get("message_thread_id", 0)
+    admin_name = group_user_label(user_id)
+
+    # 一律刪掉指令本身
+    _delete_group_admin_cmd(chat_id, update)
 
     if text == "/admin add_Jarvis":
         if toggle_thread(chat_id, thread_id, True, "jarvis"):
-            send_message(chat_id, "✅ 已允許當前話題（Jarvis）", None, thread_id)
+            send_message(chat_id, "✅ 已允許當前話題（Jarvis）", thread_id=thread_id)
             log_action(user_id, "add_thread_jarvis", details=f"{chat_id}_{thread_id}")
         else:
-            send_message(chat_id, "❌ 操作失敗", None, thread_id)
+            send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
+        return
 
-    elif text == "/admin remove_Jarvis":
+    if text == "/admin remove_Jarvis":
         if toggle_thread(chat_id, thread_id, False, "jarvis"):
-            send_message(chat_id, "❌ 已移除話題權限（Jarvis）", None, thread_id)
+            send_message(chat_id, "✅ 已移除話題權限（Jarvis）", thread_id=thread_id)
             log_action(user_id, "remove_thread_jarvis", details=f"{chat_id}_{thread_id}")
         else:
-            send_message(chat_id, "❌ 此話題未被允許（Jarvis）", None, thread_id)
+            send_message(chat_id, "❌ 此話題未被允許（Jarvis）", thread_id=thread_id)
+        return
 
-    elif text == "/admin add_SparkSign":
+    if text == "/admin add_SparkSign":
         if toggle_thread(chat_id, thread_id, True, "sparksign"):
-            send_message(chat_id, "✅ 已允許當前話題（SparkSign）", None, thread_id)
+            send_message(chat_id, "✅ 已允許當前話題（SparkSign）", thread_id=thread_id)
             log_action(user_id, "add_thread_sparksign", details=f"{chat_id}_{thread_id}")
         else:
-            send_message(chat_id, "❌ 操作失敗", None, thread_id)
+            send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
+        return
 
-    elif text == "/admin remove_SparkSign":
+    if text == "/admin remove_SparkSign":
         if toggle_thread(chat_id, thread_id, False, "sparksign"):
-            send_message(chat_id, "❌ 已移除話題權限（SparkSign）", None, thread_id)
+            send_message(chat_id, "✅ 已移除話題權限（SparkSign）", thread_id=thread_id)
             log_action(user_id, "remove_thread_sparksign", details=f"{chat_id}_{thread_id}")
         else:
-            send_message(chat_id, "❌ 此話題未被允許（SparkSign）", None, thread_id)
+            send_message(chat_id, "❌ 此話題未被允許（SparkSign）", thread_id=thread_id)
+        return
 
-    # ✅ whitelist via reply (with feedback & guard)
-    elif text == "/admin add_wl":
-        try:
-            rep = (update.get("message") or {}).get("reply_to_message") or {}
-            target = (rep.get("from") or {}).get("id")
-            if not target:
-                send_message(chat_id, "❌ 請先「回覆」要加入白名單的用戶訊息，再輸入 /admin add_wl", None, thread_id)
-                return
-            ok = whitelist_add(chat_id, int(target), int(user_id))
-            if ok:
-                send_message(chat_id, f"✅ 已加入白名單：{target}", None, thread_id)
-                log_action(user_id, "wl_add", target=int(target), details={"chat_id": int(chat_id)})
-            else:
-                send_message(chat_id, f"⚠️ 白名單已存在：{target}", None, thread_id)
-        except Exception as e:
-            send_message(chat_id, f"❌ 新增白名單失敗：{e}", None, thread_id)
+    if text == "/admin add_wl":
+        rep = (update.get("message") or {}).get("reply_to_message") or {}
+        target = (rep.get("from") or {}).get("id")
+        if not target:
+            send_message(
+                chat_id,
+                "❌ 白名單加入失敗\n\n"
+                "請先「回覆」目標用戶的訊息\n"
+                "再輸入：\n"
+                "• /admin add_wl",
+                thread_id=thread_id
+            )
+            return
 
-    elif text == "/admin remove_wl":
-        try:
-            rep = (update.get("message") or {}).get("reply_to_message") or {}
-            target = (rep.get("from") or {}).get("id")
-            if not target:
-                send_message(chat_id, "❌ 請先「回覆」要移除白名單的用戶訊息，再輸入 /admin remove_wl", None, thread_id)
-                return
-            ok = whitelist_remove(chat_id, int(target))
-            if ok:
-                send_message(chat_id, f"✅ 已移除白名單：{target}", None, thread_id)
-                log_action(user_id, "wl_remove", target=int(target), details={"chat_id": int(chat_id)})
-            else:
-                send_message(chat_id, f"⚠️ 白名單不存在：{target}", None, thread_id)
-        except Exception as e:
-            send_message(chat_id, f"❌ 移除白名單失敗：{e}", None, thread_id)
+        target_name = group_user_label(int(target))
+        ok = whitelist_add(chat_id, int(target), int(user_id))
+        if ok:
+            send_message(
+                chat_id,
+                "✅ 已加入白名單\n\n"
+                f"• 用戶：{target_name}\n"
+                f"• 操作者：{admin_name}",
+                thread_id=thread_id
+            )
+            log_action(user_id, "wl_add", target=int(target), details={"chat_id": int(chat_id)})
+        else:
+            send_message(
+                chat_id,
+                "⚠️ 白名單已存在\n\n"
+                f"• 用戶：{target_name}",
+                thread_id=thread_id
+            )
+        return
+
+    if text == "/admin remove_wl":
+        rep = (update.get("message") or {}).get("reply_to_message") or {}
+        target = (rep.get("from") or {}).get("id")
+        if not target:
+            send_message(
+                chat_id,
+                "❌ 白名單移除失敗\n\n"
+                "請先「回覆」目標用戶的訊息\n"
+                "再輸入：\n"
+                "• /admin remove_wl",
+                thread_id=thread_id
+            )
+            return
+
+        target_name = group_user_label(int(target))
+        ok = whitelist_remove(chat_id, int(target))
+        if ok:
+            send_message(
+                chat_id,
+                "✅ 已移除白名單\n\n"
+                f"• 用戶：{target_name}\n"
+                f"• 操作者：{admin_name}",
+                thread_id=thread_id
+            )
+            log_action(user_id, "wl_remove", target=int(target), details={"chat_id": int(chat_id)})
+        else:
+            send_message(
+                chat_id,
+                "⚠️ 白名單不存在\n\n"
+                f"• 用戶：{target_name}",
+                thread_id=thread_id
+            )
+        return
 
 
 def handle_user_command(text, chat_id, is_private, update=None):
@@ -1323,7 +1434,7 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "請直接傳送一個 Telegram Premium Emoji 給我，我會回覆它的 custom_emoji_id（純 ID）。\n注意：一般 emoji 不會有 ID。")
         return
 
-    # ✅ submenu: logs (no spam)
+    # submenu: logs
     if data_cb == "p_logs":
         logs = (get_logs() or [])[-12:]
         if not logs:
@@ -1425,7 +1536,6 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "🔇 請輸入「第二次違規」禁言天數（整數，例如 1 / 3 / 7）")
         return
 
-    # ✅ submenu: whitelist/violations/thread lists (no spam)
     if data_cb == "g_wl_list":
         cid = _get_active_chat_id(int(user_id))
         if not cid:
@@ -1538,7 +1648,7 @@ def webhook():
             is_private = not str(chat_id).startswith("-100")
             text = msg.get("text", "") or ""
 
-            # ✅ Group link moderation FIRST
+            # Group link moderation FIRST
             if not is_private:
                 handled = apply_link_moderation(msg)
                 if handled:
@@ -1558,7 +1668,6 @@ def webhook():
                 s = _get_sess(int(user_id))
                 state = s.get("waiting_for")
 
-                # ✅ feedback for non-digit input while waiting
                 if state and text:
                     refresh_setting_lock(int(user_id))
                     if not text.strip().isdigit():
@@ -1651,7 +1760,7 @@ def webhook():
 
                         return "OK"
 
-                # numeric UID input fallback (old flow)
+                # numeric UID input fallback
                 if text.strip().isdigit():
                     handle_uid_input(text, chat_id, int(user_id))
                     return "OK"
@@ -1687,4 +1796,5 @@ def set_webhook():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port)
