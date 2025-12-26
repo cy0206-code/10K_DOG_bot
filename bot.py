@@ -275,9 +275,11 @@ def get_threads(scope: str):
     return {}
 
 
+# ✅ FIX: must return list
 def get_logs():
     refresh_data()
-    return DATA.get(KEY_LOGS, []) or {}
+    v = DATA.get(KEY_LOGS, [])
+    return v if isinstance(v, list) else []
 
 
 def get_link_settings_map():
@@ -354,116 +356,6 @@ def toggle_thread(chat_id, thread_id, add=True, scope="jarvis"):
     return True
 
 
-# ================== Logging ==================
-def log_action(admin_id, action, target=None, details=None):
-    logs = DATA.get(KEY_LOGS, []) or []
-
-    admin_info = get_user_info(admin_id)
-    admin_name = get_display_name(admin_info) if admin_info else str(admin_id)
-
-    log_entry = {
-        "timestamp": datetime.datetime.now(TAIWAN_TZ).isoformat(),
-        "admin_id": admin_id,
-        "admin_name": admin_name,
-        "action": action,
-        "target_id": target,
-        "details": details,
-    }
-
-    if target:
-        target_info = get_user_info(target)
-        if target_info:
-            log_entry["target_name"] = get_display_name(target_info)
-
-    logs.append(log_entry)
-    if len(logs) > 200:
-        logs = logs[-200:]
-
-    update_data(KEY_LOGS, logs)
-
-
-# ================== Permissions ==================
-def should_process(update, user_id, text):
-    if "message" not in update:
-        return False
-
-    chat_id = update["message"]["chat"]["id"]
-
-    # Private chat always allowed
-    if not str(chat_id).startswith("-100"):
-        return True
-
-    # Group admin commands always allowed (naming)
-    admin_cmds = {
-        "/admin add_Jarvis",
-        "/admin remove_Jarvis",
-        "/admin add_SparkSign",
-        "/admin remove_SparkSign",
-        "/admin add_wl",
-        "/admin remove_wl",
-    }
-    if is_admin(user_id) and text in admin_cmds:
-        return True
-
-    # Normal functions require Jarvis-allowed thread
-    thread_id = update["message"].get("message_thread_id", 0)
-    return f"{chat_id}_{thread_id}" in get_threads("jarvis")
-
-
-# ================== Commands / UI ==================
-COMMANDS = {
-    "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
-    "web": "https://10kcoin.com/",
-    "announcements": "https://t.me/tenkdogcrypto",
-    "rules": "https://t.me/tenkdogcrypto/71",
-    "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
-    "pumpswap": "https://t.me/tenkdogcrypto/72",
-    "invitation_code": "https://t.me/tenkdogcrypto/122",
-    "vote": "https://t.me/tenkdogcrypto/121",
-    "linktree": "https://linktr.ee/10kdog",
-    "buy": """第一段，買SOL+開Phantom:
-https://t.me/tenkdogcrypto/141
-第二段，用SOL買10K DOG:
-https://t.me/tenkdogcrypto/142""",
-    "slogan": """儘管失敗一萬次，只要贏一次，那就足夠
-
-1 time winning is greater than 10,000 times failure
-
-1回の勝利は10,000回の失敗に勝る
-
-만 번 실패하더라도 단 한 번만 이겨도 족하다""",
-}
-
-HELP_TEXT = """📋 指令清單：
-
-/start - ✅ 開啟選單
-/help - 📋 顯示指令清單
-/ca - 📜 合約地址
-/web - 🌐 官方網站
-/announcements - 📣 社群公告
-/rules - 📑 社群規範
-/slogan - 🗣️ 精神標語
-/jup_lock - 🔐 鎖倉資訊
-/pumpswap - ⛏️ 流動性礦池教學
-/invitation_code - 🔗 註冊連結
-/buy - 💲 購買教學
-/vote - 🗳️ 投票排行網站
-/linktree - ➡️ 前往linktree"""
-
-
-def main_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "📜 合約地址", "callback_data": "ca"}],
-            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "➡️ 前往linktree", "callback_data": "linktree"}],
-            [{"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🗣️ 精神標語", "callback_data": "slogan"}],
-            [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}, {"text": "💲 購買教學", "callback_data": "buy"}],
-            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️投票排行網站", "callback_data": "vote"}],
-            [{"text": "📋 指令清單", "callback_data": "help"}],
-        ]
-    }
-
-
 # ================== Telegram API helpers ==================
 def tg(method: str, payload: dict, timeout=10):
     try:
@@ -479,7 +371,6 @@ def send_message(chat_id, text, markup=None, thread_id=None, parse_mode=None, en
         if thread_id is not None:
             payload["message_thread_id"] = thread_id
         if markup:
-            # keep your old behavior (stringify), compatible with current usage
             payload["reply_markup"] = json.dumps(markup, ensure_ascii=False)
         if entities:
             payload["entities"] = entities
@@ -610,6 +501,116 @@ def kick_member_no_ban(chat_id: int, user_id: int):
     return ok1
 
 
+# ================== Logging ==================
+def log_action(admin_id, action, target=None, details=None):
+    logs = get_logs()
+
+    admin_info = get_user_info(admin_id)
+    admin_name = get_display_name(admin_info) if admin_info else str(admin_id)
+
+    log_entry = {
+        "timestamp": datetime.datetime.now(TAIWAN_TZ).isoformat(),
+        "admin_id": admin_id,
+        "admin_name": admin_name,
+        "action": action,
+        "target_id": target,
+        "details": details,
+    }
+
+    if target:
+        target_info = get_user_info(target)
+        if target_info:
+            log_entry["target_name"] = get_display_name(target_info)
+
+    logs.append(log_entry)
+    if len(logs) > 200:
+        logs = logs[-200:]
+
+    update_data(KEY_LOGS, logs)
+
+
+# ================== Permissions ==================
+def should_process(update, user_id, text):
+    if "message" not in update:
+        return False
+
+    chat_id = update["message"]["chat"]["id"]
+
+    # Private chat always allowed
+    if not str(chat_id).startswith("-100"):
+        return True
+
+    # Group admin commands always allowed (naming)
+    admin_cmds = {
+        "/admin add_Jarvis",
+        "/admin remove_Jarvis",
+        "/admin add_SparkSign",
+        "/admin remove_SparkSign",
+        "/admin add_wl",
+        "/admin remove_wl",
+    }
+    if is_admin(user_id) and text in admin_cmds:
+        return True
+
+    # Normal functions require Jarvis-allowed thread
+    thread_id = update["message"].get("message_thread_id", 0)
+    return f"{chat_id}_{thread_id}" in get_threads("jarvis")
+
+
+# ================== Commands / UI ==================
+COMMANDS = {
+    "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
+    "web": "https://10kcoin.com/",
+    "announcements": "https://t.me/tenkdogcrypto",
+    "rules": "https://t.me/tenkdogcrypto/71",
+    "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
+    "pumpswap": "https://t.me/tenkdogcrypto/72",
+    "invitation_code": "https://t.me/tenkdogcrypto/122",
+    "vote": "https://t.me/tenkdogcrypto/121",
+    "linktree": "https://linktr.ee/10kdog",
+    "buy": """第一段，買SOL+開Phantom:
+https://t.me/tenkdogcrypto/141
+第二段，用SOL買10K DOG:
+https://t.me/tenkdogcrypto/142""",
+    "slogan": """儘管失敗一萬次，只要贏一次，那就足夠
+
+1 time winning is greater than 10,000 times failure
+
+1回の勝利は10,000回の失敗に勝る
+
+만 번 실패하더라도 단 한 번만 이겨도 족하다""",
+}
+
+HELP_TEXT = """📋 指令清單：
+
+/start - ✅ 開啟選單
+/help - 📋 顯示指令清單
+/ca - 📜 合約地址
+/web - 🌐 官方網站
+/announcements - 📣 社群公告
+/rules - 📑 社群規範
+/slogan - 🗣️ 精神標語
+/jup_lock - 🔐 鎖倉資訊
+/pumpswap - ⛏️ 流動性礦池教學
+/invitation_code - 🔗 註冊連結
+/buy - 💲 購買教學
+/vote - 🗳️ 投票排行網站
+/linktree - ➡️ 前往linktree"""
+
+
+def main_menu():
+    return {
+        "inline_keyboard": [
+            [{"text": "📜 合約地址", "callback_data": "ca"}],
+            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "➡️ 前往linktree", "callback_data": "linktree"}],
+            [{"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🗣️ 精神標語", "callback_data": "slogan"}],
+            [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}, {"text": "💲 購買教學", "callback_data": "buy"}],
+            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️投票排行網站", "callback_data": "vote"}],
+            [{"text": "📋 指令清單", "callback_data": "help"}],
+        ]
+    }
+
+
 # ================== Link moderation: detect / whitelist / violations ==================
 LINK_REGEX = re.compile(r"(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|discord\.gg/)", re.I)
 
@@ -641,7 +642,6 @@ def get_link_settings(chat_id: int) -> dict:
     s_map = get_link_settings_map()
     ck = _chat_key(chat_id)
     s = s_map.get(ck) or {}
-    # defaults
     if "enabled" not in s:
         s["enabled"] = True
     if "mute_days" not in s:
@@ -734,7 +734,6 @@ def list_violations_text(chat_id: int, limit: int = 50) -> str:
     if not m:
         return "📌 目前沒有違規名單"
 
-    # sort by count desc then time desc
     items = []
     for uid, rec in m.items():
         try:
@@ -746,7 +745,6 @@ def list_violations_text(chat_id: int, limit: int = 50) -> str:
 
     lines = ["📌 違規名單（連結違規）\n"]
     for c, t, uid in items:
-        # try display name
         name = ""
         try:
             uinfo = get_user_info(int(uid))
@@ -789,13 +787,10 @@ def whitelist_text(chat_id: int, limit: int = 60) -> str:
 
 
 def should_bypass_link_rule(chat_id: int, user_id: int) -> bool:
-    # 1) bot admins
     if is_admin(user_id):
         return True
-    # 2) whitelist
     if is_whitelisted(chat_id, user_id):
         return True
-    # 3) group admin
     st = get_chat_member_status(chat_id, user_id)
     if st in ("administrator", "creator"):
         return True
@@ -803,16 +798,12 @@ def should_bypass_link_rule(chat_id: int, user_id: int) -> bool:
 
 
 def apply_link_moderation(msg: dict) -> bool:
-    """
-    Return True if handled (deleted/penalized) => caller should stop processing.
-    """
     try:
         chat_id = int(msg["chat"]["id"])
         user_id = int((msg.get("from") or {}).get("id"))
         if not user_id:
             return False
 
-        # only groups
         if not str(chat_id).startswith("-100"):
             return False
 
@@ -823,20 +814,16 @@ def apply_link_moderation(msg: dict) -> bool:
         if not msg_has_link(msg):
             return False
 
-        # bypass check
         if should_bypass_link_rule(chat_id, user_id):
             return False
 
-        # delete offending message
         try:
             delete_message(chat_id, msg.get("message_id"))
         except:
             pass
 
-        # record violation
         count = inc_violation(chat_id, user_id)
 
-        # penalty messages (send to same thread if any)
         thread_id = msg.get("message_thread_id", None)
         if count <= 1:
             send_message(chat_id, "⚠️（第1次違規警告1次，未加入白名單前禁止發送連結）", thread_id=thread_id)
@@ -849,7 +836,6 @@ def apply_link_moderation(msg: dict) -> bool:
             send_message(chat_id, f"🔇（第2次違規禁言{mute_days}天，未加入白名單前禁止發送連結）", thread_id=thread_id)
             return True
 
-        # count >= 3
         action = settings.get("third_action", "kick")
         if action == "ban":
             ban_member(chat_id, user_id)
@@ -858,7 +844,6 @@ def apply_link_moderation(msg: dict) -> bool:
             kick_member_no_ban(chat_id, user_id)
             send_message(chat_id, "👢（第三次違規踢出群組，未加入白名單前禁止發送連結）", thread_id=thread_id)
 
-        # ✅ clear violation record to avoid accumulation
         clear_violation(chat_id, user_id)
         return True
 
@@ -987,12 +972,27 @@ def disable_panel(chat_id: int, mid: int, reason: str = "已完成設定"):
     )
 
 
+# ---------- Submenu (no spam) ----------
+MAX_PANEL_TEXT = 3800
+
+
+def _safe_text(s: str) -> str:
+    s = s or ""
+    if len(s) <= MAX_PANEL_TEXT:
+        return s
+    return s[:MAX_PANEL_TEXT] + "\n\n…（內容過長已截斷）"
+
+
+def sub_panel_markup(back_cb: str):
+    return {"inline_keyboard": [[{"text": "🔙 返回", "callback_data": back_cb}]]}
+
+
+def show_subpanel(chat_id: int, mid: int, title: str, body: str, back_cb: str):
+    text = f"{title}\n\n{_safe_text(body)}"
+    send_or_edit_panel(chat_id, mid, text, sub_panel_markup(back_cb))
+
+
 def _managed_chat_ids():
-    """
-    Collect chat ids from:
-    - allowed threads (jarvis/sparksign)
-    - link settings/whitelist/violations
-    """
     ids = set()
 
     for k in get_threads("jarvis").keys():
@@ -1024,9 +1024,26 @@ def _managed_chat_ids():
         except:
             pass
 
-    # keep only groups
     ids = {i for i in ids if str(i).startswith("-100")}
     return sorted(list(ids))
+
+
+def _chat_title(chat_id: int) -> str:
+    if not chat_id:
+        return "（未選擇群組）"
+    info = get_chat_info(chat_id)
+    return (info.get("title") if info else None) or str(chat_id)
+
+
+def _pick_default_chat_id(chats: list) -> int:
+    prefer_keywords = ["10k", "萬倍", "金狗", "dog"]
+    scored = []
+    for cid in chats:
+        title = (_chat_title(cid) or "").lower()
+        score = sum(1 for kw in prefer_keywords if kw in title)
+        scored.append((score, cid))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return int(scored[0][1]) if scored else 0
 
 
 def _get_active_chat_id(user_id: int) -> int:
@@ -1035,17 +1052,9 @@ def _get_active_chat_id(user_id: int) -> int:
         return int(s["active_chat_id"])
     chats = _managed_chat_ids()
     if chats:
-        s["active_chat_id"] = int(chats[0])
-        return int(chats[0])
-    # fallback: no managed chats
+        s["active_chat_id"] = _pick_default_chat_id(chats)
+        return int(s["active_chat_id"])
     return 0
-
-
-def _chat_title(chat_id: int) -> str:
-    if not chat_id:
-        return "（未選擇群組）"
-    info = get_chat_info(chat_id)
-    return (info.get("title") if info else None) or str(chat_id)
 
 
 def admin_main_panel():
@@ -1066,35 +1075,38 @@ def admin_admin_panel(user_id: int):
     return {"inline_keyboard": kb}
 
 
+# ✅ 2x2 compact layout + default group title
 def admin_group_panel(user_id: int):
     chat_id = _get_active_chat_id(user_id)
     title = _chat_title(chat_id)
     s = get_link_settings(chat_id) if chat_id else {"enabled": False, "mute_days": 1, "third_action": "kick"}
     enabled = "✅" if s.get("enabled") else "❌"
     third = "KICK" if s.get("third_action") == "kick" else "BAN"
+    mute_days = int(s.get("mute_days", 1) or 1)
 
     kb = []
-
-    # Chat selector
     kb.append([{"text": f"🏷️ 目前群組：{title}", "callback_data": "g_chat_select"}])
 
-    # Link moderation controls
-    kb.append([{"text": f"🔗 連結管理：{enabled}", "callback_data": "g_toggle_link"}])
-    kb.append([{"text": f"🔇 第二次禁言天數：{int(s.get('mute_days', 1))} 天", "callback_data": "g_set_mute_days"}])
-    kb.append([{"text": f"👢 第三次處置：{third}", "callback_data": "g_toggle_third"}])
-
-    # whitelist / violations
-    kb.append([{"text": "✅ 白名單列表", "callback_data": "g_wl_list"}])
-    kb.append([{"text": "➕ 新增白名單成員", "callback_data": "g_wl_add"}])
-    kb.append([{"text": "❌ 移除白名單成員", "callback_data": "g_wl_remove"}])
-    kb.append([{"text": "📌 違規名單列表", "callback_data": "g_vio_list"}])
-
-    # thread lists
-    kb.append([{"text": "📋 Jarvis 話題列表", "callback_data": "g_threads_jarvis"},
-               {"text": "✨ SparkSign 話題列表", "callback_data": "g_threads_sparksign"}])
-
-    # help
-    kb.append([{"text": "🛠️ 群組指令說明", "callback_data": "g_help"}])
+    kb.append([
+        {"text": f"🔗 連結：{enabled}", "callback_data": "g_toggle_link"},
+        {"text": f"🔇 禁言：{mute_days}天", "callback_data": "g_set_mute_days"},
+    ])
+    kb.append([
+        {"text": f"👢 第三次：{third}", "callback_data": "g_toggle_third"},
+        {"text": "📌 違規名單", "callback_data": "g_vio_list"},
+    ])
+    kb.append([
+        {"text": "✅ 白名單", "callback_data": "g_wl_list"},
+        {"text": "➕ 加白名單", "callback_data": "g_wl_add"},
+    ])
+    kb.append([
+        {"text": "❌ 移白名單", "callback_data": "g_wl_remove"},
+        {"text": "🛠️ 指令說明", "callback_data": "g_help"},
+    ])
+    kb.append([
+        {"text": "📋 Jarvis 話題", "callback_data": "g_threads_jarvis"},
+        {"text": "✨ SparkSign 話題", "callback_data": "g_threads_sparksign"},
+    ])
 
     kb.append([{"text": "🔙 返回", "callback_data": "p_main"}])
     return {"inline_keyboard": kb}
@@ -1113,33 +1125,44 @@ def chat_select_panel(user_id: int):
 
 
 def send_or_edit_panel(chat_id: int, mid: int, text: str, markup: dict):
-    # keep it simple: edit the same message for navigation
     edit_message_text(chat_id, mid, text, markup=markup, disable_preview=True)
 
 
-# ================== Handlers (existing + new) ==================
+# ================== Handlers ==================
 def handle_uid_query(update, chat_id):
+    msg = (update or {}).get("message") or {}
+    fwd = msg.get("forward_from")
+    if not fwd:
+        send_message(
+            chat_id,
+            "❌ 查詢不到 UID。\n\n"
+            "常見原因：對方開啟「轉發訊息隱私」，Telegram 不會提供 forward_from。\n\n"
+            "替代方式：\n"
+            "1) 請對方私訊我任意一句話（我可直接取得 UID）\n"
+            "2) 群組內：回覆對方訊息後輸入 /admin add_wl 或 /admin remove_wl"
+        )
+        return
+
     try:
-        user = update["message"]["forward_from"]
-        name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "未知"
-        username = f"@{user.get('username')}" if user.get("username") else "未設定"
+        name = f"{fwd.get('first_name', '')} {fwd.get('last_name', '')}".strip() or "未知"
+        username = f"@{fwd.get('username')}" if fwd.get("username") else "未設定"
 
         text = f"""🔍 用戶 UID 查詢結果
 
 👤 姓名：{name}
-🔢 UID：{user['id']}
+🔢 UID：{fwd['id']}
 📧 用戶名：{username}"""
 
         markup = {
             "inline_keyboard": [
-                [{"text": "📋 複製UID", "callback_data": f"copy_{user['id']}"}],
-                [{"text": "➕ 新增此用戶為管理員", "callback_data": f"add_{user['id']}"}],
+                [{"text": "📋 複製UID", "callback_data": f"copy_{fwd['id']}"}],
+                [{"text": "➕ 新增此用戶為管理員", "callback_data": f"add_{fwd['id']}"}],
                 [{"text": "🔙 返回", "callback_data": "p_admin"}],
             ]
         }
         send_message(chat_id, text, markup)
-    except:
-        send_message(chat_id, "❌ 查詢失敗")
+    except Exception:
+        send_message(chat_id, "❌ 查詢失敗（訊息格式或 Telegram 限制）")
 
 
 def handle_uid_input(text, chat_id, user_id):
@@ -1158,7 +1181,6 @@ def handle_uid_input(text, chat_id, user_id):
 
 
 def handle_admin_command(text, chat_id, user_id):
-    # kept for backward compatibility (text commands in private)
     if text == "/admin":
         res = send_message(chat_id, "👑 Jarvis 管理員控制面板", admin_main_panel())
         try:
@@ -1199,30 +1221,38 @@ def handle_group_admin(text, chat_id, user_id, update):
         else:
             send_message(chat_id, "❌ 此話題未被允許（SparkSign）", None, thread_id)
 
-    # ✅ whitelist via reply
+    # ✅ whitelist via reply (with feedback & guard)
     elif text == "/admin add_wl":
-        rep = (update.get("message") or {}).get("reply_to_message") or {}
-        target = (rep.get("from") or {}).get("id")
-        if not target:
-            send_message(chat_id, "❌ 請先「回覆」要加入白名單的用戶訊息，再輸入 /admin add_wl", None, thread_id)
-            return
-        if whitelist_add(chat_id, int(target), int(user_id)):
-            send_message(chat_id, f"✅ 已加入白名單：{target}", None, thread_id)
-            log_action(user_id, "wl_add", target=int(target), details={"chat_id": int(chat_id)})
-        else:
-            send_message(chat_id, f"⚠️ 白名單已存在：{target}", None, thread_id)
+        try:
+            rep = (update.get("message") or {}).get("reply_to_message") or {}
+            target = (rep.get("from") or {}).get("id")
+            if not target:
+                send_message(chat_id, "❌ 請先「回覆」要加入白名單的用戶訊息，再輸入 /admin add_wl", None, thread_id)
+                return
+            ok = whitelist_add(chat_id, int(target), int(user_id))
+            if ok:
+                send_message(chat_id, f"✅ 已加入白名單：{target}", None, thread_id)
+                log_action(user_id, "wl_add", target=int(target), details={"chat_id": int(chat_id)})
+            else:
+                send_message(chat_id, f"⚠️ 白名單已存在：{target}", None, thread_id)
+        except Exception as e:
+            send_message(chat_id, f"❌ 新增白名單失敗：{e}", None, thread_id)
 
     elif text == "/admin remove_wl":
-        rep = (update.get("message") or {}).get("reply_to_message") or {}
-        target = (rep.get("from") or {}).get("id")
-        if not target:
-            send_message(chat_id, "❌ 請先「回覆」要移除白名單的用戶訊息，再輸入 /admin remove_wl", None, thread_id)
-            return
-        if whitelist_remove(chat_id, int(target)):
-            send_message(chat_id, f"✅ 已移除白名單：{target}", None, thread_id)
-            log_action(user_id, "wl_remove", target=int(target), details={"chat_id": int(chat_id)})
-        else:
-            send_message(chat_id, f"⚠️ 白名單不存在：{target}", None, thread_id)
+        try:
+            rep = (update.get("message") or {}).get("reply_to_message") or {}
+            target = (rep.get("from") or {}).get("id")
+            if not target:
+                send_message(chat_id, "❌ 請先「回覆」要移除白名單的用戶訊息，再輸入 /admin remove_wl", None, thread_id)
+                return
+            ok = whitelist_remove(chat_id, int(target))
+            if ok:
+                send_message(chat_id, f"✅ 已移除白名單：{target}", None, thread_id)
+                log_action(user_id, "wl_remove", target=int(target), details={"chat_id": int(chat_id)})
+            else:
+                send_message(chat_id, f"⚠️ 白名單不存在：{target}", None, thread_id)
+        except Exception as e:
+            send_message(chat_id, f"❌ 移除白名單失敗：{e}", None, thread_id)
 
 
 def handle_user_command(text, chat_id, is_private, update=None):
@@ -1245,7 +1275,7 @@ def handle_user_command(text, chat_id, is_private, update=None):
 def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
     is_private = not str(chat_id).startswith("-100")
 
-    # Group callbacks: keep old behavior (menu/buttons only if allowed thread)
+    # Group callbacks
     if not is_private:
         thread_key = f"{chat_id}_{message_thread_id or 0}"
         if thread_key not in get_threads("jarvis") and data_cb not in ("main_menu", "help"):
@@ -1267,8 +1297,6 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
 
     s = _get_sess(int(user_id))
     mid = s.get("active_panel_mid")
-
-    # If user clicks panel without active message, ignore
     if not mid:
         return
 
@@ -1295,14 +1323,18 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "請直接傳送一個 Telegram Premium Emoji 給我，我會回覆它的 custom_emoji_id（純 ID）。\n注意：一般 emoji 不會有 ID。")
         return
 
+    # ✅ submenu: logs (no spam)
     if data_cb == "p_logs":
-        logs = (DATA.get(KEY_LOGS) or [])[-12:]
+        logs = (get_logs() or [])[-12:]
         if not logs:
-            send_message(chat_id, "📊 目前沒有操作紀錄")
+            show_subpanel(chat_id, mid, "📊 操作紀錄", "目前沒有操作紀錄", "p_main")
         else:
             msg = "📊 最近操作紀錄：\n\n"
             for log in reversed(logs):
-                t = datetime.datetime.fromisoformat(log["timestamp"]).strftime("%m/%d %H:%M")
+                try:
+                    t = datetime.datetime.fromisoformat(log["timestamp"]).strftime("%m/%d %H:%M")
+                except:
+                    t = log.get("timestamp", "")
                 admin_name = log.get("admin_name", log.get("admin_id"))
                 action = log.get("action")
                 details = log.get("details")
@@ -1310,12 +1342,12 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
                 if details:
                     line += f" | {details}"
                 msg += line + "\n"
-            send_message(chat_id, msg)
+            show_subpanel(chat_id, mid, "📊 操作紀錄", msg, "p_main")
         return
 
     # ---- Admin Settings actions ----
     if data_cb == "a_list":
-        send_message(chat_id, get_admin_list_with_names())
+        show_subpanel(chat_id, mid, "👥 管理員列表", get_admin_list_with_names(), "p_admin")
         return
 
     if data_cb == "a_query_uid":
@@ -1393,20 +1425,21 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         send_message(chat_id, "🔇 請輸入「第二次違規」禁言天數（整數，例如 1 / 3 / 7）")
         return
 
+    # ✅ submenu: whitelist/violations/thread lists (no spam)
     if data_cb == "g_wl_list":
         cid = _get_active_chat_id(int(user_id))
         if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組")
+            show_subpanel(chat_id, mid, "✅ 白名單列表", "❌ 尚未選擇群組", "p_group")
             return
-        send_message(chat_id, whitelist_text(cid))
+        show_subpanel(chat_id, mid, "✅ 白名單列表", whitelist_text(cid), "p_group")
         return
 
     if data_cb == "g_vio_list":
         cid = _get_active_chat_id(int(user_id))
         if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組")
+            show_subpanel(chat_id, mid, "📌 違規名單列表", "❌ 尚未選擇群組", "p_group")
             return
-        send_message(chat_id, list_violations_text(cid))
+        show_subpanel(chat_id, mid, "📌 違規名單列表", list_violations_text(cid), "p_group")
         return
 
     if data_cb == "g_wl_add":
@@ -1430,16 +1463,18 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         return
 
     if data_cb == "g_threads_jarvis":
-        send_message(chat_id, get_thread_list_with_names("jarvis"))
+        show_subpanel(chat_id, mid, "📋 Jarvis 話題列表", get_thread_list_with_names("jarvis"), "p_group")
         return
 
     if data_cb == "g_threads_sparksign":
-        send_message(chat_id, get_thread_list_with_names("sparksign"))
+        show_subpanel(chat_id, mid, "✨ SparkSign 話題列表", get_thread_list_with_names("sparksign"), "p_group")
         return
 
     if data_cb == "g_help":
-        send_message(
+        show_subpanel(
             chat_id,
+            mid,
+            "🛠️ 群組指令說明",
             "🛠️ 群組話題授權（只透過 Jarvis 操作）：\n"
             "/admin add_Jarvis - 允許當前話題（Jarvis）\n"
             "/admin remove_Jarvis - 移除當前話題（Jarvis）\n\n"
@@ -1448,11 +1483,11 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
             "/admin remove_SparkSign - 移除當前話題（SparkSign）\n\n"
             "🔗 白名單（群組內由管理員使用，需回覆目標用戶訊息）：\n"
             "/admin add_wl - 加入白名單\n"
-            "/admin remove_wl - 移除白名單\n"
+            "/admin remove_wl - 移除白名單\n",
+            "p_group"
         )
         return
 
-    # copy/add from UID query
     if data_cb.startswith("copy_"):
         send_message(chat_id, data_cb.replace("copy_", ""))
         return
@@ -1460,11 +1495,10 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
     if data_cb.startswith("add_") and is_super_admin(user_id):
         try:
             uid = int(data_cb.replace("add_", ""))
-            if add_admin(uid, user_id):
-                send_message(chat_id, f"✅ 已新增用戶 {uid} 為管理員")
+            ok = add_admin(uid, user_id)
+            send_message(chat_id, f"✅ 已新增用戶 {uid} 為管理員" if ok else f"❌ 用戶 {uid} 已經是管理員")
+            if ok:
                 log_action(user_id, "add_admin", uid)
-            else:
-                send_message(chat_id, f"❌ 用戶 {uid} 已經是管理員")
         except:
             send_message(chat_id, "❌ 操作失敗")
         return
@@ -1485,7 +1519,6 @@ def webhook():
             user_id = cb["from"]["id"]
             is_private = not str(chat_id).startswith("-100")
 
-            # Private panels use edit; store active mid if missing
             if is_private and is_admin(int(user_id)):
                 try:
                     _get_sess(int(user_id))["active_panel_mid"] = cb["message"]["message_id"]
@@ -1505,39 +1538,47 @@ def webhook():
             is_private = not str(chat_id).startswith("-100")
             text = msg.get("text", "") or ""
 
-            # ✅ (0) Group link moderation FIRST (all topics, all messages incl caption)
+            # ✅ Group link moderation FIRST
             if not is_private:
                 handled = apply_link_moderation(msg)
                 if handled:
                     return "OK"
 
-            # ===== Premium Emoji ID: admin private quick capture =====
+            # Premium Emoji ID
             if is_private and user_id and is_admin(int(user_id)):
                 if handle_premium_emoji_id_message(msg, chat_id):
                     return "OK"
 
-            # ===== Private admin panel input flow =====
+            # Private admin panel input flow
             if is_private and user_id and is_admin(int(user_id)):
-                # forward-from UID lookup
                 if "forward_from" in msg and not text.startswith("/"):
                     handle_uid_query(update, chat_id)
                     return "OK"
 
                 s = _get_sess(int(user_id))
                 state = s.get("waiting_for")
-                if state and text and text.strip().isdigit():
+
+                # ✅ feedback for non-digit input while waiting
+                if state and text:
                     refresh_setting_lock(int(user_id))
+                    if not text.strip().isdigit():
+                        send_message(chat_id, "❌ 請輸入「數字 UID」")
+                        return "OK"
+
                     old_mid = s.get("active_panel_mid")
                     ret = s.get("return_panel") or "p_main"
                     updated = False
 
-                    # handle states
                     if state == "admin_add_uid":
-                        if is_super_admin(int(user_id)):
-                            uid = int(text.strip())
+                        uid = int(text.strip())
+                        if not is_super_admin(int(user_id)):
+                            send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
+                            updated = True
+                        else:
                             ok = add_admin(uid, int(user_id))
                             send_message(chat_id, "✅ 已新增管理員" if ok else "❌ 該用戶已是管理員")
-                            log_action(int(user_id), "add_admin", target=uid)
+                            if ok:
+                                log_action(int(user_id), "add_admin", target=uid)
                             updated = True
 
                     elif state == "admin_remove_uid":
@@ -1550,7 +1591,10 @@ def webhook():
 
                     elif state == "mute_days":
                         cid = _get_active_chat_id(int(user_id))
-                        if cid:
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                            updated = True
+                        else:
                             v = max(1, int(text.strip()))
                             conf = get_link_settings(cid)
                             conf["mute_days"] = v
@@ -1561,23 +1605,30 @@ def webhook():
 
                     elif state == "wl_add_uid":
                         cid = _get_active_chat_id(int(user_id))
-                        if cid:
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                            updated = True
+                        else:
                             uid = int(text.strip())
                             ok = whitelist_add(cid, uid, int(user_id))
                             send_message(chat_id, "✅ 已加入白名單" if ok else "⚠️ 白名單已存在")
-                            log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid})
+                            if ok:
+                                log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid})
                             updated = True
 
                     elif state == "wl_remove_uid":
                         cid = _get_active_chat_id(int(user_id))
-                        if cid:
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                            updated = True
+                        else:
                             uid = int(text.strip())
                             ok = whitelist_remove(cid, uid)
                             send_message(chat_id, "✅ 已移除白名單" if ok else "⚠️ 白名單不存在")
-                            log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid})
+                            if ok:
+                                log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid})
                             updated = True
 
-                    # close old panel + reopen current panel (SparkSign-like, avoid confusion)
                     if updated:
                         clear_wait(int(user_id))
                         release_setting_lock(int(user_id))
@@ -1585,7 +1636,6 @@ def webhook():
                         if old_mid:
                             disable_panel(int(chat_id), int(old_mid), reason="已完成設定")
 
-                        # send new panel message and set as active
                         if ret == "p_admin":
                             res = send_message(chat_id, "👑 管理員設定", admin_admin_panel(int(user_id)))
                         elif ret == "p_group":
@@ -1599,20 +1649,18 @@ def webhook():
                         except:
                             pass
 
-                    return "OK"
+                        return "OK"
 
                 # numeric UID input fallback (old flow)
                 if text.strip().isdigit():
                     handle_uid_input(text, chat_id, int(user_id))
                     return "OK"
 
-            # ===== Group / normal handling (text only features below) =====
+            # Group / normal handling
             if "text" in msg:
-                # Permission check for groups (kept)
                 if not is_private and user_id and not should_process(update, int(user_id), text):
                     return "OK"
 
-                # Admin commands
                 if user_id and is_admin(int(user_id)) and text.startswith("/admin"):
                     if is_private:
                         handle_admin_command(text, chat_id, int(user_id))
