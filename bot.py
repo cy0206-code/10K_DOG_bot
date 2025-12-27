@@ -35,6 +35,10 @@ KEY_LINK_SETTINGS = "link_settings"       # { chat_id: { enabled: bool, mute_day
 KEY_LINK_WHITELIST = "link_whitelist"     # { chat_id: { user_id: {added_by, added_time} } }
 KEY_LINK_VIOLATIONS = "link_violations"   # { chat_id: { user_id: {count:int, last_time:iso} } }
 
+# ✅ SparkSign verify tracking (shared Gist)
+KEY_VERIFY_PENDING = "verify_pending"           # { chatId_userId: {nonce, exp} }
+KEY_WELCOME_MSG_TRACKER = "welcome_msg_tracker" # { chatId_userId_msgId: {chat_id,user_id,message_id,status,ts,verified_ts,src} }
+
 # ================== Premium Emoji (Jarvis only) ==================
 PREMIUM_EMOJI_MAP = {
     "🤖": "", "👑": "", "👥": "", "👤": "", "🔍": "", "🔢": "", "➕": "", "❌": "", "✅": "",
@@ -100,6 +104,9 @@ def get_default_data():
         KEY_LINK_SETTINGS: {},
         KEY_LINK_WHITELIST: {},
         KEY_LINK_VIOLATIONS: {},
+        # ✅ keep SparkSign verify data safe even if Jarvis initializes the Gist
+        KEY_VERIFY_PENDING: {},
+        KEY_WELCOME_MSG_TRACKER: {},
     }
 
 
@@ -125,6 +132,10 @@ def _ensure_defaults(loaded: dict) -> dict:
     loaded.setdefault(KEY_LINK_WHITELIST, {})
     loaded.setdefault(KEY_LINK_VIOLATIONS, {})
 
+    # ✅ SparkSign verify tracking
+    loaded.setdefault(KEY_VERIFY_PENDING, {})
+    loaded.setdefault(KEY_WELCOME_MSG_TRACKER, {})
+
     # Type safety
     if not isinstance(loaded.get(KEY_THREADS_JARVIS), dict):
         loaded[KEY_THREADS_JARVIS] = {}
@@ -142,6 +153,11 @@ def _ensure_defaults(loaded: dict) -> dict:
         loaded[KEY_LINK_WHITELIST] = {}
     if not isinstance(loaded.get(KEY_LINK_VIOLATIONS), dict):
         loaded[KEY_LINK_VIOLATIONS] = {}
+
+    if not isinstance(loaded.get(KEY_VERIFY_PENDING), dict):
+        loaded[KEY_VERIFY_PENDING] = {}
+    if not isinstance(loaded.get(KEY_WELCOME_MSG_TRACKER), dict):
+        loaded[KEY_WELCOME_MSG_TRACKER] = {}
 
     return loaded
 
@@ -324,7 +340,6 @@ def remove_admin(admin_id: int, removed_by: int):
 
     if s not in admins:
         return False, "❌ 該用戶不是管理員"
-    # 不顯示「超級」字樣，但保留保護邏輯：管理員不能移除 SUPER_ADMIN
     if admins[s].get("is_super", False):
         return False, "❌ 無法移除此管理員"
     if rb not in admins:
@@ -737,7 +752,6 @@ def clear_violation(chat_id: int, user_id: int):
 
 
 def list_violations_text(chat_id: int, limit: int = 50) -> str:
-    # 私聊管理員看的：允許顯 UID（你說沒差）
     vio = get_link_violations_map()
     ck = _chat_key(chat_id)
     m = vio.get(ck) or {}
@@ -769,7 +783,6 @@ def list_violations_text(chat_id: int, limit: int = 50) -> str:
 
 
 def whitelist_text(chat_id: int, limit: int = 60) -> str:
-    # 私聊管理員看的：允許顯 UID（你說沒差），但會多顯示加入者
     wl = get_link_whitelist_map()
     ck = _chat_key(chat_id)
     m = wl.get(ck) or {}
@@ -917,7 +930,6 @@ def get_admin_list_with_names():
         try:
             u = get_user_info(int(admin_id))
             name = get_display_name(u)
-            # 不做「超級」顯示
             msg += f"👤 管理員 - {name}\n🔢 ID: {admin_id}\n\n"
         except:
             msg += f"👤 管理員 - 未知用戶\n🔢 ID: {admin_id}\n\n"
@@ -1253,16 +1265,9 @@ def _delete_group_admin_cmd(chat_id: int, update: dict):
 
 
 def handle_group_admin(text, chat_id, user_id, update):
-    """
-    群組內管理指令：
-    - 會刪除管理員輸入的 /admin 指令訊息
-    - 群組回饋一律不顯 UID（改用顯示名稱）
-    - 白名單會記錄加入者（已由 whitelist_add 寫入 added_by）
-    """
     thread_id = (update.get("message") or {}).get("message_thread_id", 0)
     admin_name = group_user_label(user_id)
 
-    # 一律刪掉指令本身
     _delete_group_admin_cmd(chat_id, update)
 
     if text == "/admin add_Jarvis":
