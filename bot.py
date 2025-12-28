@@ -1,11 +1,21 @@
+# app.py
+# 10K DOG - Jarvis (Flask) — 高峰期強化版
+# 改動重點：
+# 1) Gist 讀取：記憶體快取 + ETag(304) + 防雪崩鎖 + stale-if-error
+# 2) Gist 寫入：記憶體先寫、合併寫回(debounce) + 失敗不阻塞(標記 dirty)
+# 3) Circuit Breaker：Gist 連續失敗會短暫跳過外部讀寫，避免塞車
+# 4) Opportunistic flush：每次 webhook 進來都會順便嘗試把到期的 dirty 寫回
+# 5) 不再每次 update_data() 都同步 save_data()（高峰期最大卡點）
+
 import os
 import json
 import re
-from flask import Flask, request
-import requests
 import datetime
 import pytz
+import threading
 from time import time as _now
+from flask import Flask, request
+import requests
 
 app = Flask(__name__)
 
@@ -15,7 +25,6 @@ SUPER_ADMIN = 8126033106
 
 GIST_TOKEN = os.environ.get("GIST_TOKEN")
 GIST_ID = os.environ.get("GIST_ID", "")
-
 TAIWAN_TZ = pytz.timezone("Asia/Taipei")
 
 GIST_FILENAME = "10k_dog_bot_data.json"
@@ -81,14 +90,42 @@ def extract_first_custom_emoji_id(message: dict):
     return None
 
 
-# ================== Gist Data Cache ==================
+# ================== Gist Data Cache (High-Load Hardened) ==================
 DATA = {}
-DATA_CACHE = {"ts": 0.0}
-DATA_TTL_SEC = 6.0
+CACHE = {
+    "loaded_ts": 0.0,        # 上次成功載入時間
+    "etag": None,            # gist etag
+    "dirty": False,          # 有未寫回變更
+    "dirty_ts": 0.0,         # 最近一次變更時間
+    "last_flush_ts": 0.0,    # 最近一次嘗試寫回時間
+    "last_ok_flush_ts": 0.0, # 最近一次成功寫回時間
+    "fail_count": 0,         # 連續失敗次數（讀/寫）
+    "cb_open_until": 0.0,    # circuit breaker 開啟到此時間，期間不打 gist
+    "last_err": "",          # 方便 debug
+}
+
+# 快取 TTL：管理員/話題/設定多屬低頻變動；過短反而造成高峰期頻繁讀 gist
+DATA_TTL_SEC = float(os.environ.get("DATA_TTL_SEC", "45"))
+
+# Debounce：合併寫回（避免每次 update 都 patch gist）
+SAVE_DEBOUNCE_SEC = float(os.environ.get("SAVE_DEBOUNCE_SEC", "2.5"))
+
+# Circuit Breaker：連續失敗達門檻，短暫跳過 gist
+CB_FAIL_THRESHOLD = int(os.environ.get("CB_FAIL_THRESHOLD", "3"))
+CB_OPEN_SEC = float(os.environ.get("CB_OPEN_SEC", "10"))
+
+# 防雪崩：只允許同一時間一個 request 去 refresh / flush
+LOAD_LOCK = threading.Lock()
+SAVE_LOCK = threading.Lock()
 
 
-def _github_headers():
-    return {"Authorization": f"token {GIST_TOKEN}"} if GIST_TOKEN else {}
+def _github_headers(extra: dict = None):
+    h = {"Accept": "application/vnd.github+json"}
+    if GIST_TOKEN:
+        h["Authorization"] = f"token {GIST_TOKEN}"
+    if extra:
+        h.update(extra)
+    return h
 
 
 def get_default_data():
@@ -132,7 +169,6 @@ def _ensure_defaults(loaded: dict) -> dict:
     loaded.setdefault(KEY_LINK_WHITELIST, {})
     loaded.setdefault(KEY_LINK_VIOLATIONS, {})
 
-    # ✅ SparkSign verify tracking
     loaded.setdefault(KEY_VERIFY_PENDING, {})
     loaded.setdefault(KEY_WELCOME_MSG_TRACKER, {})
 
@@ -153,7 +189,6 @@ def _ensure_defaults(loaded: dict) -> dict:
         loaded[KEY_LINK_WHITELIST] = {}
     if not isinstance(loaded.get(KEY_LINK_VIOLATIONS), dict):
         loaded[KEY_LINK_VIOLATIONS] = {}
-
     if not isinstance(loaded.get(KEY_VERIFY_PENDING), dict):
         loaded[KEY_VERIFY_PENDING] = {}
     if not isinstance(loaded.get(KEY_WELCOME_MSG_TRACKER), dict):
@@ -162,116 +197,254 @@ def _ensure_defaults(loaded: dict) -> dict:
     return loaded
 
 
-def load_data():
+def _cb_is_open() -> bool:
+    return _now() < float(CACHE.get("cb_open_until", 0) or 0)
+
+
+def _cb_record_failure(err: str):
+    CACHE["fail_count"] = int(CACHE.get("fail_count", 0) or 0) + 1
+    CACHE["last_err"] = str(err or "")[:240]
+    if CACHE["fail_count"] >= CB_FAIL_THRESHOLD:
+        CACHE["cb_open_until"] = _now() + CB_OPEN_SEC
+
+
+def _cb_record_success():
+    CACHE["fail_count"] = 0
+    CACHE["cb_open_until"] = 0.0
+    CACHE["last_err"] = ""
+
+
+def _resolve_gist_id() -> str:
+    """
+    只在必要時找/建 gist id；高峰期避免頻繁 list gists。
+    """
     global current_gist_id
 
+    if current_gist_id:
+        return current_gist_id
+
     if not GIST_TOKEN:
-        print("❌ 未設定 GIST_TOKEN")
-        return get_default_data()
+        return ""
 
+    headers = _github_headers()
     try:
-        headers = _github_headers()
-
-        # Determine gist id
-        if current_gist_id:
-            url = f"https://api.github.com/gists/{current_gist_id}"
-        else:
-            url = "https://api.github.com/gists"
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code != 200:
-                print(f"❌ 搜尋 Gist 失敗: {r.status_code}")
-                return get_default_data()
-
-            found = None
-            for gist in r.json():
-                if GIST_FILENAME in gist.get("files", {}):
-                    found = gist
-                    break
-
-            if not found:
-                default_data = get_default_data()
-                save_data(default_data)
-                return default_data
-
-            current_gist_id = found["id"]
-            url = f"https://api.github.com/gists/{current_gist_id}"
-
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get("https://api.github.com/gists", headers=headers, timeout=10)
         if r.status_code != 200:
-            print(f"❌ 讀取 Gist 失敗: {r.status_code}")
-            return get_default_data()
+            raise RuntimeError(f"gist list failed: {r.status_code}")
+        found = None
+        for gist in r.json():
+            if GIST_FILENAME in (gist.get("files") or {}):
+                found = gist
+                break
+        if found:
+            current_gist_id = found["id"]
+            return current_gist_id
 
-        gist_data = r.json()
-        if GIST_FILENAME not in gist_data.get("files", {}):
-            default_data = get_default_data()
-            save_data(default_data)
-            return default_data
-
-        content = gist_data["files"][GIST_FILENAME].get("content", "")
-        loaded = json.loads(content) if content else {}
-        loaded = _ensure_defaults(loaded)
-
-        print("✅ 從 Gist 讀取資料成功")
-        return loaded
+        # not found -> create
+        default_data = get_default_data()
+        gid = _create_gist(default_data)
+        current_gist_id = gid or ""
+        return current_gist_id
     except Exception as e:
-        print(f"❌ 讀取資料錯誤: {e}")
-        return get_default_data()
+        _cb_record_failure(f"_resolve_gist_id: {e}")
+        return ""
 
 
-def save_data(data_to_save):
-    global current_gist_id
-
+def _create_gist(data_to_save: dict) -> str:
     if not GIST_TOKEN:
-        print("❌ 未設定 GIST_TOKEN，無法儲存")
-        return
+        return ""
+    files = {GIST_FILENAME: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
+    headers = _github_headers()
+    r = requests.post(
+        "https://api.github.com/gists",
+        headers=headers,
+        json={"public": False, "description": "10K DOG Bot Data", "files": files},
+        timeout=12,
+    )
+    if r.status_code == 201:
+        return (r.json() or {}).get("id", "")
+    raise RuntimeError(f"create gist failed: {r.status_code} {getattr(r, 'text', '')[:200]}")
 
-    try:
-        files = {GIST_FILENAME: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
-        headers = _github_headers()
 
-        if current_gist_id:
-            r = requests.patch(
-                f"https://api.github.com/gists/{current_gist_id}",
-                headers=headers,
-                json={"files": files},
-                timeout=10,
-            )
-        else:
-            r = requests.post(
-                "https://api.github.com/gists",
-                headers=headers,
-                json={"public": False, "description": "10K DOG Bot Data", "files": files},
-                timeout=10,
-            )
-            if r.status_code == 201:
-                current_gist_id = r.json()["id"]
-                print(f"✅ 創建新 Gist: {current_gist_id}")
+def _gist_get() -> dict:
+    """
+    讀 gist：使用 ETag，可能回傳 None 表示 304（無變更）
+    """
+    gid = _resolve_gist_id()
+    if not gid:
+        raise RuntimeError("no gist id")
 
-        if r.status_code in (200, 201):
-            print("✅ 資料已儲存到 Gist")
-        else:
-            print(f"❌ 儲存失敗: {r.status_code} {getattr(r, 'text', '')[:200]}")
-    except Exception as e:
-        print(f"❌ 儲存錯誤: {e}")
+    url = f"https://api.github.com/gists/{gid}"
+    extra = {}
+    if CACHE.get("etag"):
+        extra["If-None-Match"] = CACHE["etag"]
+
+    r = requests.get(url, headers=_github_headers(extra), timeout=12)
+
+    if r.status_code == 304:
+        return None  # no change
+
+    if r.status_code != 200:
+        raise RuntimeError(f"gist get failed: {r.status_code} {getattr(r, 'text', '')[:180]}")
+
+    # update etag
+    etag = r.headers.get("ETag")
+    if etag:
+        CACHE["etag"] = etag
+
+    gist_data = r.json() or {}
+    files = gist_data.get("files") or {}
+    if GIST_FILENAME not in files:
+        # ensure file exists
+        default_data = get_default_data()
+        _gist_patch(default_data)  # attempt to create file
+        return default_data
+
+    content = (files[GIST_FILENAME] or {}).get("content", "") or ""
+    loaded = json.loads(content) if content else {}
+    return _ensure_defaults(loaded)
+
+
+def _gist_patch(data_to_save: dict):
+    gid = _resolve_gist_id()
+    if not gid:
+        raise RuntimeError("no gist id")
+
+    files = {GIST_FILENAME: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
+    r = requests.patch(
+        f"https://api.github.com/gists/{gid}",
+        headers=_github_headers(),
+        json={"files": files},
+        timeout=12,
+    )
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"gist patch failed: {r.status_code} {getattr(r, 'text', '')[:200]}")
+    # patch success => refresh etag if present
+    etag = r.headers.get("ETag")
+    if etag:
+        CACHE["etag"] = etag
 
 
 def refresh_data(force: bool = False):
+    """
+    高峰期安全 refresh：
+    - TTL 內不 refresh
+    - 一次只允許一個 request refresh（防雪崩）
+    - 讀失敗 => 使用舊 DATA (stale-if-error)
+    - circuit breaker 開啟 => 直接不打 gist
+    """
     global DATA
-    now = _now()
-    if (not force) and DATA and (now - DATA_CACHE["ts"] < DATA_TTL_SEC):
+
+    if not GIST_TOKEN:
+        if not DATA:
+            DATA = get_default_data()
         return
-    DATA = load_data()
-    DATA_CACHE["ts"] = now
+
+    now = _now()
+    if (not force) and DATA and (now - float(CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
+        return
+
+    if _cb_is_open():
+        # breaker open => keep stale
+        if not DATA:
+            DATA = get_default_data()
+        return
+
+    acquired = LOAD_LOCK.acquire(timeout=0.15)
+    if not acquired:
+        # 有人正在 refresh，避免排隊卡住；走舊資料
+        if not DATA:
+            DATA = get_default_data()
+        return
+
+    try:
+        # double-check after lock
+        now = _now()
+        if (not force) and DATA and (now - float(CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
+            return
+
+        loaded = _gist_get()
+        if loaded is None:
+            # 304 no change
+            CACHE["loaded_ts"] = now
+            _cb_record_success()
+            return
+
+        DATA = loaded
+        CACHE["loaded_ts"] = now
+        _cb_record_success()
+    except Exception as e:
+        _cb_record_failure(f"refresh_data: {e}")
+        if not DATA:
+            DATA = get_default_data()
+    finally:
+        try:
+            LOAD_LOCK.release()
+        except Exception:
+            pass
+
+
+def mark_dirty():
+    CACHE["dirty"] = True
+    CACHE["dirty_ts"] = _now()
+
+
+def try_flush_dirty(force: bool = False):
+    """
+    Opportunistic flush：到期才寫回；失敗不阻塞（dirty 保留），並可能開啟 breaker。
+    """
+    global DATA
+
+    if not GIST_TOKEN:
+        return
+    if not DATA:
+        return
+    if not CACHE.get("dirty", False):
+        return
+
+    now = _now()
+    if (not force) and (now - float(CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
+        return
+
+    # circuit breaker open -> skip flush
+    if _cb_is_open():
+        return
+
+    acquired = SAVE_LOCK.acquire(timeout=0.15)
+    if not acquired:
+        return
+
+    try:
+        # double check
+        now = _now()
+        if (not force) and (now - float(CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
+            return
+
+        CACHE["last_flush_ts"] = now
+        _gist_patch(DATA)
+        CACHE["dirty"] = False
+        CACHE["last_ok_flush_ts"] = now
+        _cb_record_success()
+    except Exception as e:
+        _cb_record_failure(f"flush: {e}")
+        # keep dirty True
+    finally:
+        try:
+            SAVE_LOCK.release()
+        except Exception:
+            pass
 
 
 def update_data(key, value):
+    """
+    高峰期版：只改記憶體 + 標記 dirty，寫回交給 try_flush_dirty() 合併處理
+    """
     refresh_data()
     DATA[key] = value
-    save_data(DATA)
-    DATA_CACHE["ts"] = _now()
+    mark_dirty()
 
 
-# initial load
+# initial load (best effort)
 refresh_data(force=True)
 
 # ================== Data Accessors ==================
@@ -1038,7 +1211,6 @@ def disable_panel(chat_id: int, mid: int, reason: str = "已完成設定"):
     )
 
 
-# ---------- Submenu (no spam) ----------
 MAX_PANEL_TEXT = 3800
 
 
@@ -1623,7 +1795,9 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        refresh_data()
+        # 1) 先把到期的 dirty 合併寫回（不阻塞，不一定成功）
+        try_flush_dirty(force=False)
+
         update = request.get_json(force=True, silent=True) or {}
 
         # Callback query
@@ -1763,11 +1937,14 @@ def webhook():
                         except:
                             pass
 
+                        # 2) 管理操作通常會改 gist，這裡強制嘗試 flush（仍不阻塞，失敗會保留 dirty）
+                        try_flush_dirty(force=True)
                         return "OK"
 
                 # numeric UID input fallback
                 if text.strip().isdigit():
                     handle_uid_input(text, chat_id, int(user_id))
+                    try_flush_dirty(force=False)
                     return "OK"
 
             # Group / normal handling
@@ -1780,6 +1957,7 @@ def webhook():
                         handle_admin_command(text, chat_id, int(user_id))
                     else:
                         handle_group_admin(text, chat_id, int(user_id), update)
+                    try_flush_dirty(force=False)
                 else:
                     handle_user_command(text, chat_id, is_private, update)
 
@@ -1791,7 +1969,16 @@ def webhook():
 
 @app.route("/")
 def home():
-    return f"🤖 {BOT_NAME} is Running!"
+    # 額外顯示 cache 狀態方便你看高峰期是否 breaker 開啟
+    st = {
+        "dirty": bool(CACHE.get("dirty")),
+        "loaded_ago_sec": round(_now() - float(CACHE.get("loaded_ts", 0) or 0), 2),
+        "fail_count": int(CACHE.get("fail_count", 0) or 0),
+        "cb_open": _cb_is_open(),
+        "cb_open_until": float(CACHE.get("cb_open_until", 0) or 0),
+        "last_err": CACHE.get("last_err", ""),
+    }
+    return f"🤖 {BOT_NAME} is Running!<br><pre>{json.dumps(st, ensure_ascii=False, indent=2)}</pre>"
 
 
 @app.route("/set_webhook", methods=["GET"])
