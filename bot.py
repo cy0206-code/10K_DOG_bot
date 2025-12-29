@@ -551,13 +551,19 @@ def tg(method: str, payload: dict, timeout=10):
         return None
 
 
+def _prepare_reply_markup(markup):
+    if isinstance(markup, str):
+        return markup
+    return json.dumps(markup, ensure_ascii=False)
+
+
 def send_message(chat_id, text, markup=None, thread_id=None, parse_mode=None, entities=None, disable_preview=True):
     try:
         payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": bool(disable_preview)}
         if thread_id is not None:
             payload["message_thread_id"] = thread_id
         if markup:
-            payload["reply_markup"] = json.dumps(markup, ensure_ascii=False)
+            payload["reply_markup"] = _prepare_reply_markup(markup)
         if entities:
             payload["entities"] = entities
         elif parse_mode:
@@ -572,7 +578,7 @@ def send_message(chat_id, text, markup=None, thread_id=None, parse_mode=None, en
 def edit_message_text(chat_id, message_id, text, markup=None, parse_mode=None, entities=None, disable_preview=True):
     payload = {"chat_id": chat_id, "message_id": int(message_id), "text": text, "disable_web_page_preview": bool(disable_preview)}
     if markup:
-        payload["reply_markup"] = json.dumps(markup, ensure_ascii=False)
+        payload["reply_markup"] = _prepare_reply_markup(markup)
     if entities:
         payload["entities"] = entities
     elif parse_mode:
