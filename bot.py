@@ -761,6 +761,38 @@ def should_process(update, user_id, text):
 
 
 # ================== Commands / UI ==================
+VOTE_LINKS = [
+    ("DexScreener", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
+    (
+        "GeckoTerminal",
+        "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults",
+    ),
+    ("Bitget Swap", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
+    (
+        "KuCoin Web3",
+        "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142",
+    ),
+    ("LiveCoinWatch", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
+    ("CoinSniper", "https://coinsniper.net/coin/87574"),
+    (
+        "Top100Token",
+        "https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
+    ),
+    ("CoinCatapult", "https://coincatapult.com/coin/10k-dog-10k-dog"),
+    ("CoinScope", "https://www.coinscope.co/coin/10k-dog"),
+    ("CoinBoom", "https://coinboom.net/coin/10k-dog"),
+    ("FreshCoins", "https://www.freshcoins.io/coins/10k-dog"),
+]
+
+
+def vote_keyboard():
+    rows = []
+    for i in range(0, len(VOTE_LINKS), 3):
+        chunk = VOTE_LINKS[i : i + 3]
+        rows.append([{"text": label, "url": url} for label, url in chunk])
+    return {"inline_keyboard": rows}
+
+
 COMMANDS = {
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "web": "https://10kcoin.com/",
@@ -769,18 +801,7 @@ COMMANDS = {
     "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "pumpswap": "https://t.me/tenkdogcrypto/72",
     "invitation_code": "https://t.me/tenkdogcrypto/122",
-    "vote": """一些可以幫忙投票衝熱度的網站
-https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w
-https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults
-https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump
-https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142
-https://www.livecoinwatch.com/price/10KDOG-10KDOG
-https://coinsniper.net/coin/87574
-https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump
-https://coincatapult.com/coin/10k-dog-10k-dog
-https://www.coinscope.co/coin/10k-dog
-https://coinboom.net/coin/10k-dog
-https://www.freshcoins.io/coins/10k-dog""",
+    "vote": {"text": "每日投票衝熱度的網站", "markup": vote_keyboard()},
     "linktree": "https://linktr.ee/10kdog",
     "buy": """第一段，買SOL+開Phantom:
 https://t.me/tenkdogcrypto/141
@@ -808,7 +829,7 @@ HELP_TEXT = """📋 指令清單：
 /pumpswap - ⛏️ 流動性礦池教學
 /invitation_code - 🔗 註冊連結
 /buy - 💲 購買教學
-/vote - 🗳️ 投票排行網站
+/vote - 🗳️ 每日投票衝熱度的網站
 /linktree - ➡️ 前往linktree"""
 
 
@@ -819,7 +840,7 @@ def main_menu():
             [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "➡️ 前往linktree", "callback_data": "linktree"}],
             [{"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🗣️ 精神標語", "callback_data": "slogan"}],
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}, {"text": "💲 購買教學", "callback_data": "buy"}],
-            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️投票排行網站", "callback_data": "vote"}],
+            [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️ 每日投票", "callback_data": "vote"}],
             [{"text": "📋 指令清單", "callback_data": "help"}],
         ]
     }
@@ -934,11 +955,14 @@ def clear_violation(chat_id: int, user_id: int):
     vio = get_link_violations_map()
     ck = _chat_key(chat_id)
     uid = str(int(user_id))
+    removed = False
     if uid in (vio.get(ck) or {}):
         vio[ck].pop(uid, None)
         if not vio[ck]:
             vio.pop(ck, None)
         update_data(KEY_LINK_VIOLATIONS, vio)
+        removed = True
+    return removed
 
 
 def list_violations_text(chat_id: int, limit: int = 50) -> str:
@@ -1348,6 +1372,7 @@ def admin_group_panel(user_id: int):
     kb.append([
         {"text": f"👢 第三次：{third}", "callback_data": "g_toggle_third"},
         {"text": "📌 違規名單", "callback_data": "g_vio_list"},
+        {"text": "🧹 移除違規", "callback_data": "g_vio_remove"},
     ])
     kb.append([
         {"text": "✅ 白名單", "callback_data": "g_wl_list"},
@@ -1380,6 +1405,19 @@ def chat_select_panel(user_id: int):
 
 def send_or_edit_panel(chat_id: int, mid: int, text: str, markup: dict):
     edit_message_text(chat_id, mid, text, markup=markup, disable_preview=True)
+
+
+def send_command_response(chat_id, payload, thread_id=None):
+    if isinstance(payload, dict):
+        return send_message(
+            chat_id,
+            payload.get("text", ""),
+            payload.get("markup"),
+            thread_id,
+            parse_mode=payload.get("parse_mode"),
+            entities=payload.get("entities"),
+        )
+    return send_message(chat_id, payload, None, thread_id)
 
 
 # ================== Handlers ==================
@@ -1574,7 +1612,7 @@ def handle_user_command(text, chat_id, is_private, update=None):
     elif clean_text.startswith("/"):
         cmd = clean_text[1:].lower().split(" ")[0]
         if cmd in COMMANDS:
-            send_message(chat_id, COMMANDS[cmd], None, thread_id)
+            send_command_response(chat_id, COMMANDS[cmd], thread_id)
 
 
 def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
@@ -1588,7 +1626,7 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
             return
 
         if data_cb in COMMANDS:
-            send_message(chat_id, COMMANDS[data_cb], None, message_thread_id)
+            send_command_response(chat_id, COMMANDS[data_cb], message_thread_id)
         elif data_cb == "help":
             send_message(chat_id, HELP_TEXT, None, message_thread_id)
         elif data_cb == "main_menu":
@@ -1744,6 +1782,16 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
             show_subpanel(chat_id, mid, "📌 違規名單列表", "❌ 尚未選擇群組", "p_group")
             return
         show_subpanel(chat_id, mid, "📌 違規名單列表", list_violations_text(cid), "p_group")
+        return
+
+    if data_cb == "g_vio_remove":
+        if not try_acquire_setting_lock(int(user_id)):
+            holder = ACTIVE_SETTING["user_id"]
+            send_message(chat_id, f"⛔ 目前有其他管理員正在設定（UID: {holder}），請稍後再試。")
+            return
+        refresh_setting_lock(int(user_id))
+        set_wait(int(user_id), "vio_remove_uid", "p_group")
+        send_message(chat_id, "🧹 請輸入要從違規名單移除的 UID（數字）")
         return
 
     if data_cb == "g_wl_add":
@@ -1932,6 +1980,19 @@ def webhook():
                             send_message(chat_id, "✅ 已移除白名單" if ok else "⚠️ 白名單不存在")
                             if ok:
                                 log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid})
+                            updated = True
+
+                    elif state == "vio_remove_uid":
+                        cid = _get_active_chat_id(int(user_id))
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                            updated = True
+                        else:
+                            uid = int(text.strip())
+                            removed = clear_violation(cid, uid)
+                            send_message(chat_id, "✅ 已從違規名單移除" if removed else "⚠️ 該用戶不在違規名單中")
+                            if removed:
+                                log_action(int(user_id), "violation_clear", target=uid, details={"chat_id": cid})
                             updated = True
 
                     if updated:
