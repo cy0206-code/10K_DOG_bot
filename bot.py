@@ -769,7 +769,18 @@ COMMANDS = {
     "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "pumpswap": "https://t.me/tenkdogcrypto/72",
     "invitation_code": "https://t.me/tenkdogcrypto/122",
-    "vote": "https://t.me/tenkdogcrypto/121",
+    "vote": """一些可以幫忙投票衝熱度的網站
+https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w
+https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults
+https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump
+https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142
+https://www.livecoinwatch.com/price/10KDOG-10KDOG
+https://coinsniper.net/coin/87574
+https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump
+https://coincatapult.com/coin/10k-dog-10k-dog
+https://www.coinscope.co/coin/10k-dog
+https://coinboom.net/coin/10k-dog
+https://www.freshcoins.io/coins/10k-dog""",
     "linktree": "https://linktr.ee/10kdog",
     "buy": """第一段，買SOL+開Phantom:
 https://t.me/tenkdogcrypto/141
