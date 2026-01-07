@@ -764,12 +764,12 @@ def should_process(update, user_id, text):
 VOTE_LINKS = [
     ("𝘿𝙚𝙭𝙎𝙘𝙧𝙚𝙚𝙣𝙚𝙧", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
     (
-        "GeckoTerminal",
+        "𝙂𝙚𝙘𝙠𝙤𝙏𝙚𝙧𝙢𝙞𝙣𝙖𝙡",
         "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults",
     ),
     ("𝘽𝙞𝙩𝙜𝙚𝙩𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
     (
-        "KuCoin Web3",
+        "𝙆𝙪𝘾𝙤𝙞𝙣𝙒𝙚𝙗𝟯",
         "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142",
     ),
     ("𝙇𝙞𝙫𝙚𝘾𝙤𝙞𝙣𝙒𝙖𝙩𝙘𝙝", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
