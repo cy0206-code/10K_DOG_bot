@@ -762,12 +762,12 @@ def should_process(update, user_id, text):
 
 # ================== Commands / UI ==================
 VOTE_LINKS = [
-    ("DexScreener", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
+    ("ᴅᴇxꜱᴄʀᴇᴇɴᴇʀ", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
     (
         "GeckoTerminal",
         "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults",
     ),
-    ("Bitget Swap", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
+    ("𝘽𝙞𝙩𝙜𝙚𝙩 𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
     (
         "KuCoin Web3",
         "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142",
