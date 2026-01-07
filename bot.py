@@ -762,26 +762,26 @@ def should_process(update, user_id, text):
 
 # ================== Commands / UI ==================
 VOTE_LINKS = [
-    ("ᴅᴇxꜱᴄʀᴇᴇɴᴇʀ", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
+    ("𝘿𝙚𝙭𝙎𝙘𝙧𝙚𝙚𝙣𝙚𝙧", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
     (
         "GeckoTerminal",
         "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults",
     ),
-    ("𝘽𝙞𝙩𝙜𝙚𝙩 𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
+    ("𝘽𝙞𝙩𝙜𝙚𝙩𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
     (
         "KuCoin Web3",
         "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142",
     ),
-    ("LiveCoinWatch", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
-    ("CoinSniper", "https://coinsniper.net/coin/87574"),
+    ("𝙇𝙞𝙫𝙚𝘾𝙤𝙞𝙣𝙒𝙖𝙩𝙘𝙝", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
+    ("𝘾𝙤𝙞𝙣𝙎𝙣𝙞𝙥𝙚𝙧", "https://coinsniper.net/coin/87574"),
     (
-        "Top100Token",
+        "𝙏𝙤𝙥𝟭𝟬𝟬𝙏𝙤𝙠𝙚𝙣",
         "https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     ),
-    ("CoinCatapult", "https://coincatapult.com/coin/10k-dog-10k-dog"),
-    ("CoinScope", "https://www.coinscope.co/coin/10k-dog"),
-    ("CoinBoom", "https://coinboom.net/coin/10k-dog"),
-    ("FreshCoins", "https://www.freshcoins.io/coins/10k-dog"),
+    ("𝘾𝙤𝙞𝙣𝘾𝙖𝙩𝙖𝙥𝙪𝙡𝙩", "https://coincatapult.com/coin/10k-dog-10k-dog"),
+    ("𝘾𝙤𝙞𝙣𝙎𝙘𝙤𝙥𝙚", "https://www.coinscope.co/coin/10k-dog"),
+    ("𝘾𝙤𝙞𝙣𝘽𝙤𝙤𝙢", "https://coinboom.net/coin/10k-dog"),
+    ("𝙁𝙧𝙚𝙨𝙝𝘾𝙤𝙞𝙣𝙨", "https://www.freshcoins.io/coins/10k-dog"),
 ]
 
 
