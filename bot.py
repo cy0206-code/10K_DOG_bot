@@ -763,35 +763,33 @@ def should_process(update, user_id, text):
 # ================== Commands / UI ==================
 VOTE_LINKS = [
     ("𝘿𝙚𝙭𝙎𝙘𝙧𝙚𝙚𝙣𝙚𝙧", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
-    (
-        "𝙂𝙚𝙘𝙠𝙤𝙏𝙚𝙧𝙢𝙞𝙣𝙖𝙡",
-        "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults",
-    ),
+    ("𝙂𝙚𝙘𝙠𝙤𝙏𝙚𝙧𝙢𝙞𝙣𝙖𝙡","https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults"),
     ("𝘽𝙞𝙩𝙜𝙚𝙩𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
-    (
-        "𝙆𝙪𝘾𝙤𝙞𝙣𝙒𝙚𝙗𝟯",
-        "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142",
-    ),
+    ("𝙆𝙪𝘾𝙤𝙞𝙣𝙒𝙚𝙗𝟯","https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142"),
     ("𝙇𝙞𝙫𝙚𝘾𝙤𝙞𝙣𝙒𝙖𝙩𝙘𝙝", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
     ("𝘾𝙤𝙞𝙣𝙎𝙣𝙞𝙥𝙚𝙧", "https://coinsniper.net/coin/87574"),
-    (
-        "𝙏𝙤𝙥𝟭𝟬𝟬𝙏𝙤𝙠𝙚𝙣",
-        "https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
-    ),
+    ("𝙏𝙤𝙥𝟭𝟬𝟬𝙏𝙤𝙠𝙚𝙣","https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
     ("𝘾𝙤𝙞𝙣𝘾𝙖𝙩𝙖𝙥𝙪𝙡𝙩", "https://coincatapult.com/coin/10k-dog-10k-dog"),
     ("𝘾𝙤𝙞𝙣𝙎𝙘𝙤𝙥𝙚", "https://www.coinscope.co/coin/10k-dog"),
     ("𝘾𝙤𝙞𝙣𝘽𝙤𝙤𝙢", "https://coinboom.net/coin/10k-dog"),
     ("𝙁𝙧𝙚𝙨𝙝𝘾𝙤𝙞𝙣𝙨", "https://www.freshcoins.io/coins/10k-dog"),
 ]
 
+SOCIAL_MEDIA_LINKS = [
+    ("𝙓", "https://x.com/10Kdogcoin"),
+    ("𝙏𝙝𝙧𝙚𝙖𝙙𝙨", "https://www.threads.com/@_10kdog_"),
+    ("𝙄𝙂","https://www.instagram.com/_10kdog_/",),
+    ("𝘿𝙞𝙨𝙘𝙤𝙧𝙙", "https://discord.gg/10kdog"),
+    ("𝙔𝙤𝙪𝙏𝙪𝙗𝙚主頻道", "https://www.youtube.com/@10KDOGGOES1"),
+    ("𝙔𝙤𝙪𝙏𝙪𝙗𝙚交易教學", "https://www.youtube.com/@10KTrading-z2k"),
+]
 
-def vote_keyboard():
+def build_generic_keyboard(links_list, cols=2):
     rows = []
-    for i in range(0, len(VOTE_LINKS), 3):
-        chunk = VOTE_LINKS[i : i + 3]
+    for i in range(0, len(links_list), cols):
+        chunk = links_list[i : i + cols]
         rows.append([{"text": label, "url": url} for label, url in chunk])
     return {"inline_keyboard": rows}
-
 
 COMMANDS = {
     "ca": "C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
@@ -801,7 +799,8 @@ COMMANDS = {
     "jup_lock": "https://lock.jup.ag/token/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump",
     "pumpswap": "https://t.me/tenkdogcrypto/72",
     "invitation_code": "https://t.me/tenkdogcrypto/122",
-    "vote": {"text": "每日投票衝熱度的網站", "markup": vote_keyboard()},
+    "vote": {"text": "每日投票衝熱度的網站", "markup": build_generic_keyboard(VOTE_LINKS, 3)},
+    "social_media": {"text": "官方社媒", "markup": build_generic_keyboard(SOCIAL_MEDIA_LINKS, 2)},
     "linktree": "https://linktr.ee/10kdog",
     "buy": """第一段，買SOL+開Phantom:
 https://t.me/tenkdogcrypto/141
@@ -830,6 +829,7 @@ HELP_TEXT = """📋 指令清單：
 /invitation_code - 🔗 註冊連結
 /buy - 💲 購買教學
 /vote - 🗳️ 每日投票衝熱度的網站
+/social_media - 📌官方社媒
 /linktree - ➡️ 前往linktree"""
 
 
@@ -837,7 +837,7 @@ def main_menu():
     return {
         "inline_keyboard": [
             [{"text": "📜 合約地址", "callback_data": "ca"}],
-            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "➡️ 前往linktree", "callback_data": "linktree"}],
+            [{"text": "🌐 官網網站", "callback_data": "web"}, {"text": "📌 官方社媒", "callback_data": "social_media"}, {"text": "➡️ 前往linktree", "callback_data": "linktree"}],
             [{"text": "📣 社群公告", "callback_data": "announcements"}, {"text": "📑 社群規範", "callback_data": "rules"}, {"text": "🗣️ 精神標語", "callback_data": "slogan"}],
             [{"text": "🔐 鎖倉資訊", "callback_data": "jup_lock"}, {"text": "🔗 註冊連結", "callback_data": "invitation_code"}, {"text": "💲 購買教學", "callback_data": "buy"}],
             [{"text": "⛏️ 流動性礦池教學", "callback_data": "pumpswap"}, {"text": "🗳️ 每日投票", "callback_data": "vote"}],
