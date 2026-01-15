@@ -745,12 +745,12 @@ def should_process(update, user_id, text):
 
     # Group admin commands always allowed
     admin_cmds = {
-        "/admin add_Jarvis",
-        "/admin remove_Jarvis",
-        "/admin add_SparkSign",
-        "/admin remove_SparkSign",
-        "/admin add_wl",
-        "/admin remove_wl",
+        "/admin_add_Jarvis",
+        "/admin_remove_Jarvis",
+        "/admin_add_SparkSign",
+        "/admin_remove_SparkSign",
+        "/admin_add_wl",
+        "/admin_remove_wl",
     }
     if is_admin(user_id) and text in admin_cmds:
         return True
@@ -835,16 +835,16 @@ HELP_TEXT = """📋 指令清單：
 
 以下爲管理員指令：
 🛠 群組話題授權：
-/admin add_Jarvis - 允許當前話題
-/admin remove_Jarvis - 移除當前話題
+/admin_add_Jarvis - 允許當前話題
+/admin_remove_Jarvis - 移除當前話題
 
 ✨ SparkSign 話題授權：
-/admin add_SparkSign - 允許當前話題
-/admin remove_SparkSign - 移除當前話題
+/admin_add_SparkSign - 允許當前話題
+/admin_remove_SparkSign - 移除當前話題
 
 🔗 白名單（群組內由管理員使用，需回覆目標用戶訊息）：
-/admin add_wl - 加入白名單
-/admin remove_wl - 移除白名單"""
+/admin_add_wl - 加入白名單
+/admin_remove_wl - 移除白名單"""
 
 
 def main_menu():
@@ -1445,7 +1445,7 @@ def handle_uid_query(update, chat_id):
             "常見原因：對方開啟「轉發訊息隱私」，Telegram 不會提供 forward_from。\n\n"
             "替代方式：\n"
             "1) 請對方私訊我任意一句話（我可直接取得 UID）\n"
-            "2) 群組內：回覆對方訊息後輸入 /admin add_wl 或 /admin remove_wl"
+            "2) 群組內：回覆對方訊息後輸入 /admin_add_wl 或 /admin_remove_wl"
         )
         return
 
@@ -1511,7 +1511,7 @@ def handle_group_admin(text, chat_id, user_id, update):
 
     _delete_group_admin_cmd(chat_id, update)
 
-    if text == "/admin add_Jarvis":
+    if text == "/admin_add_Jarvis":
         if toggle_thread(chat_id, thread_id, True, "jarvis"):
             send_message(chat_id, "✅ 已允許當前話題（Jarvis）", thread_id=thread_id)
             log_action(user_id, "add_thread_jarvis", details=f"{chat_id}_{thread_id}")
@@ -1519,7 +1519,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
         return
 
-    if text == "/admin remove_Jarvis":
+    if text == "/admin_remove_Jarvis":
         if toggle_thread(chat_id, thread_id, False, "jarvis"):
             send_message(chat_id, "✅ 已移除話題權限（Jarvis）", thread_id=thread_id)
             log_action(user_id, "remove_thread_jarvis", details=f"{chat_id}_{thread_id}")
@@ -1527,7 +1527,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許（Jarvis）", thread_id=thread_id)
         return
 
-    if text == "/admin add_SparkSign":
+    if text == "/admin_add_SparkSign":
         if toggle_thread(chat_id, thread_id, True, "sparksign"):
             send_message(chat_id, "✅ 已允許當前話題（SparkSign）", thread_id=thread_id)
             log_action(user_id, "add_thread_sparksign", details=f"{chat_id}_{thread_id}")
@@ -1535,7 +1535,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
         return
 
-    if text == "/admin remove_SparkSign":
+    if text == "/admin_remove_SparkSign":
         if toggle_thread(chat_id, thread_id, False, "sparksign"):
             send_message(chat_id, "✅ 已移除話題權限（SparkSign）", thread_id=thread_id)
             log_action(user_id, "remove_thread_sparksign", details=f"{chat_id}_{thread_id}")
@@ -1543,7 +1543,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許（SparkSign）", thread_id=thread_id)
         return
 
-    if text == "/admin add_wl":
+    if text == "/admin_add_wl":
         rep = (update.get("message") or {}).get("reply_to_message") or {}
         target = (rep.get("from") or {}).get("id")
         if not target:
@@ -1552,7 +1552,7 @@ def handle_group_admin(text, chat_id, user_id, update):
                 "❌ 白名單加入失敗\n\n"
                 "請先「回覆」目標用戶的訊息\n"
                 "再輸入：\n"
-                "• /admin add_wl",
+                "• /admin_add_wl",
                 thread_id=thread_id
             )
             return
@@ -1577,7 +1577,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             )
         return
 
-    if text == "/admin remove_wl":
+    if text == "/admin_remove_wl":
         rep = (update.get("message") or {}).get("reply_to_message") or {}
         target = (rep.get("from") or {}).get("id")
         if not target:
@@ -1586,7 +1586,7 @@ def handle_group_admin(text, chat_id, user_id, update):
                 "❌ 白名單移除失敗\n\n"
                 "請先「回覆」目標用戶的訊息\n"
                 "再輸入：\n"
-                "• /admin remove_wl",
+                "• /admin_remove_wl",
                 thread_id=thread_id
             )
             return
@@ -1842,14 +1842,14 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
             mid,
             "🛠️ 群組指令說明",
             "🛠️ 群組話題授權（只透過 Jarvis 操作）：\n"
-            "/admin add_Jarvis - 允許當前話題（Jarvis）\n"
-            "/admin remove_Jarvis - 移除當前話題（Jarvis）\n\n"
+            "/admin_add_Jarvis - 允許當前話題（Jarvis）\n"
+            "/admin_remove_Jarvis - 移除當前話題（Jarvis）\n\n"
             "✨ SparkSign 話題授權（仍由 Jarvis 操作）：\n"
-            "/admin add_SparkSign - 允許當前話題（SparkSign）\n"
-            "/admin remove_SparkSign - 移除當前話題（SparkSign）\n\n"
+            "/admin_add_SparkSign - 允許當前話題（SparkSign）\n"
+            "/admin_remove_SparkSign - 移除當前話題（SparkSign）\n\n"
             "🔗 白名單（群組內由管理員使用，需回覆目標用戶訊息）：\n"
-            "/admin add_wl - 加入白名單\n"
-            "/admin remove_wl - 移除白名單\n",
+            "/admin_add_wl - 加入白名單\n"
+            "/admin_remove_wl - 移除白名單\n",
             "p_group"
         )
         return
