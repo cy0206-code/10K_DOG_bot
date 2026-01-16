@@ -1517,6 +1517,8 @@ def _delete_group_admin_cmd(chat_id: int, update: dict):
 
 
 def handle_group_admin(text, chat_id, user_id, update):
+    cmd = normalize_cmd(text)
+    
     thread_id = (update.get("message") or {}).get("message_thread_id", 0)
     admin_name = group_user_label(user_id)
 
@@ -1879,7 +1881,7 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         except:
             send_message(chat_id, "❌ 操作失敗")
         return
-        if data_cb.startswith("wladd_"):
+    if data_cb.startswith("wladd_"):
         try:
             uid = int(data_cb.replace("wladd_", ""))
             cid = _get_active_chat_id(int(user_id))
