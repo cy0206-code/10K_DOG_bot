@@ -1870,6 +1870,38 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         except:
             send_message(chat_id, "❌ 操作失敗")
         return
+        if data_cb.startswith("wladd_"):
+        try:
+            uid = int(data_cb.replace("wladd_", ""))
+            cid = _get_active_chat_id(int(user_id))
+            if not cid:
+                send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                return
+            ok = whitelist_add(cid, uid, int(user_id))
+            send_message(chat_id, "✅ 已加入白名單" if ok else "⚠️ 白名單已存在")
+            if ok:
+                log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid, "src": "uid_query_button"})
+            try_flush_dirty(force=True)
+        except:
+            send_message(chat_id, "❌ 操作失敗")
+        return
+
+    if data_cb.startswith("wlrm_"):
+        try:
+            uid = int(data_cb.replace("wlrm_", ""))
+            cid = _get_active_chat_id(int(user_id))
+            if not cid:
+                send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                return
+            ok = whitelist_remove(cid, uid)
+            send_message(chat_id, "✅ 已移除白名單" if ok else "⚠️ 白名單不存在")
+            if ok:
+                log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid, "src": "uid_query_button"})
+            try_flush_dirty(force=True)
+        except:
+            send_message(chat_id, "❌ 操作失敗")
+        return
+
 
 
 # ================== Routes ==================
