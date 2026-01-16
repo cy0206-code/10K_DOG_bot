@@ -1463,6 +1463,8 @@ def handle_uid_query(update, chat_id):
             "inline_keyboard": [
                 [{"text": "📋 複製UID", "callback_data": f"copy_{fwd['id']}"}],
                 [{"text": "➕ 新增此用戶為管理員", "callback_data": f"add_{fwd['id']}"}],
+                [{"text": "✅ 加入白名單", "callback_data": f"wladd_{fwd['id']}"}],
+                [{"text": "❌ 移除白名單", "callback_data": f"wlrm_{fwd['id']}"}],
                 [{"text": "🔙 返回", "callback_data": "p_admin"}],
             ]
         }
