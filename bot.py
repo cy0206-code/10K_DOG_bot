@@ -733,6 +733,13 @@ def log_action(admin_id, action, target=None, details=None):
 
 
 # ================== Permissions ==================
+def normalize_cmd(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    first = t.split()[0]          # 只取第一段
+    return first.split("@")[0]    # 去掉 @botname
+
 def should_process(update, user_id, text):
     if "message" not in update:
         return False
@@ -743,6 +750,8 @@ def should_process(update, user_id, text):
     if not str(chat_id).startswith("-100"):
         return True
 
+    cmd = normalize_cmd(text)
+
     # Group admin commands always allowed
     admin_cmds = {
         "/admin_add_jarvis",
@@ -752,7 +761,7 @@ def should_process(update, user_id, text):
         "/admin_add_wl",
         "/admin_remove_wl",
     }
-    if is_admin(user_id) and text in admin_cmds:
+    if is_admin(user_id) and cmd in admin_cmds:
         return True
 
     # Normal functions require Jarvis-allowed thread
@@ -1513,7 +1522,7 @@ def handle_group_admin(text, chat_id, user_id, update):
 
     _delete_group_admin_cmd(chat_id, update)
 
-    if text == "/admin_add_jarvis":
+    if cmd == "/admin_add_jarvis":
         if toggle_thread(chat_id, thread_id, True, "jarvis"):
             send_message(chat_id, "✅ 已允許當前話題（Jarvis）", thread_id=thread_id)
             log_action(user_id, "add_thread_jarvis", details=f"{chat_id}_{thread_id}")
@@ -1521,7 +1530,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
         return
 
-    if text == "/admin_remove_jarvis":
+    if cmd == "/admin_remove_jarvis":
         if toggle_thread(chat_id, thread_id, False, "jarvis"):
             send_message(chat_id, "✅ 已移除話題權限（Jarvis）", thread_id=thread_id)
             log_action(user_id, "remove_thread_jarvis", details=f"{chat_id}_{thread_id}")
@@ -1529,7 +1538,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許（Jarvis）", thread_id=thread_id)
         return
 
-    if text == "/admin_add_sparksign":
+    if cmd == "/admin_add_sparksign":
         if toggle_thread(chat_id, thread_id, True, "sparksign"):
             send_message(chat_id, "✅ 已允許當前話題（SparkSign）", thread_id=thread_id)
             log_action(user_id, "add_thread_sparksign", details=f"{chat_id}_{thread_id}")
@@ -1537,7 +1546,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 操作失敗", thread_id=thread_id)
         return
 
-    if text == "/admin_remove_SparkSign":
+    if cmd == "/admin_remove_sparksign":
         if toggle_thread(chat_id, thread_id, False, "sparksign"):
             send_message(chat_id, "✅ 已移除話題權限（SparkSign）", thread_id=thread_id)
             log_action(user_id, "remove_thread_sparksign", details=f"{chat_id}_{thread_id}")
@@ -1545,7 +1554,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             send_message(chat_id, "❌ 此話題未被允許（SparkSign）", thread_id=thread_id)
         return
 
-    if text == "/admin_add_wl":
+    if cmd == "/admin_add_wl":
         rep = (update.get("message") or {}).get("reply_to_message") or {}
         target = (rep.get("from") or {}).get("id")
         if not target:
@@ -1579,7 +1588,7 @@ def handle_group_admin(text, chat_id, user_id, update):
             )
         return
 
-    if text == "/admin_remove_wl":
+    if cmd == "/admin_remove_wl":
         rep = (update.get("message") or {}).get("reply_to_message") or {}
         target = (rep.get("from") or {}).get("id")
         if not target:
