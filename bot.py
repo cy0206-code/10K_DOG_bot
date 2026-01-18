@@ -1,17 +1,3 @@
-# app.py
-# 10K DOG - Jarvis (Flask) — 三檔 Gist 版本（CORE + RT_JARVIS）
-# - 已移除 tg-premiumemoji 相關功能（整段刪除）
-# - CORE：admins / allowed_threads_* / link_settings / link_whitelist（低頻、共享）
-# - RT_JARVIS：link_violations / admin_logs（高頻、Jarvis 獨立）
-# - 禁止「讀取失敗時用空 dict 覆蓋 gist」：read error 只走 stale/last_good，不會 patch 空內容
-#
-# ENV:
-#   BOT_TOKEN
-#   GIST_TOKEN
-#   GIST_ID_CORE
-#   GIST_ID_RT_JARVIS
-#   (optional) CORE_TTL_SEC, RT_TTL_SEC, CORE_SAVE_DEBOUNCE_SEC, RT_SAVE_DEBOUNCE_SEC, CB_FAIL_THRESHOLD, CB_OPEN_SEC
-
 import os
 import json
 import re
@@ -29,28 +15,75 @@ TOKEN = os.environ.get("BOT_TOKEN")
 SUPER_ADMIN = 8126033106
 
 GIST_TOKEN = os.environ.get("GIST_TOKEN")
+
+# ✅ NEW: split gist ids
 GIST_ID_CORE = os.environ.get("GIST_ID_CORE", "").strip()
 GIST_ID_RT_JARVIS = os.environ.get("GIST_ID_RT_JARVIS", "").strip()
 
 TAIWAN_TZ = pytz.timezone("Asia/Taipei")
-BOT_NAME = "10K DOG - Jarvis"
 
-# ================== Gist filenames ==================
+# ✅ filenames inside each gist
 CORE_FILENAME = "10k_dog_core.json"
 RT_FILENAME = "10k_dog_runtime_jarvis.json"
 
-# ================== Core keys ==================
+BOT_NAME = "10K DOG - Jarvis"
+
+# ================== Gist Schema Keys ==================
+# Core keys (低頻共享)
 KEY_ADMINS = "admins"
 KEY_THREADS_JARVIS = "allowed_threads_jarvis"
 KEY_THREADS_SPARKSIGN = "allowed_threads_sparksign"
-KEY_LINK_SETTINGS = "link_settings"       # { chat_id: { enabled: bool, mute_days: int, third_action: "kick"|"ban" } }
+KEY_SPARKSIGN_SETTINGS = "sparksign_settings"
+KEY_LINK_SETTINGS = "link_settings"       # { chat_id: { enabled: bool, mute_days: int, third_action } }
 KEY_LINK_WHITELIST = "link_whitelist"     # { chat_id: { user_id: {added_by, added_time} } }
 
-# ================== Runtime keys (Jarvis) ==================
+# Runtime keys (Jarvis 高頻)
 KEY_LINK_VIOLATIONS = "link_violations"   # { chat_id: { user_id: {count:int, last_time:iso} } }
 KEY_LOGS = "admin_logs"                   # list
 
-# ================== Gist Data Cache (High-Load Hardened) ==================
+# ================== Premium Emoji (Jarvis only) ==================
+PREMIUM_EMOJI_MAP = {
+    "🤖": "", "👑": "", "👥": "", "👤": "", "🔍": "", "🔢": "", "➕": "", "❌": "", "✅": "",
+    "📋": "", "📊": "", "🛠️": "", "🔙": "", "✨": "", "💬": "", "🏷️": "", "⏰": "", "📣": "",
+    "📑": "", "🌐": "", "🔐": "", "🔗": "", "💲": "", "🗳️": "", "➡️": "", "⛏️": "",
+}
+
+
+def apply_premium_emoji_entities(text: str):
+    if not text:
+        return text, None
+
+    entities = []
+    for emoji, custom_id in PREMIUM_EMOJI_MAP.items():
+        if not custom_id:
+            continue
+        start = 0
+        while True:
+            idx = text.find(emoji, start)
+            if idx == -1:
+                break
+            entities.append(
+                {"type": "custom_emoji", "offset": idx, "length": len(emoji), "custom_emoji_id": custom_id}
+            )
+            start = idx + len(emoji)
+
+    return text, entities if entities else None
+
+
+def extract_first_custom_emoji_id(message: dict):
+    if not isinstance(message, dict):
+        return None
+    for key in ("entities", "caption_entities"):
+        ents = message.get(key) or []
+        if not isinstance(ents, list):
+            continue
+        for ent in ents:
+            if isinstance(ent, dict) and ent.get("type") == "custom_emoji" and ent.get("custom_emoji_id"):
+                return ent.get("custom_emoji_id")
+    return None
+
+
+# ================== Gist I/O (三檔分離: CORE + RT_JARVIS) ==================
 CORE_DATA = {}
 RT_DATA = {}
 
@@ -78,19 +111,15 @@ RT_CACHE = {
     "last_err": "",
 }
 
-CORE_TTL_SEC = float(os.environ.get("CORE_TTL_SEC", "60"))
-RT_TTL_SEC = float(os.environ.get("RT_TTL_SEC", "20"))
-
-CORE_SAVE_DEBOUNCE_SEC = float(os.environ.get("CORE_SAVE_DEBOUNCE_SEC", "2.5"))
-RT_SAVE_DEBOUNCE_SEC = float(os.environ.get("RT_SAVE_DEBOUNCE_SEC", "2.0"))
-
+DATA_TTL_SEC = float(os.environ.get("DATA_TTL_SEC", "45"))
+SAVE_DEBOUNCE_SEC = float(os.environ.get("SAVE_DEBOUNCE_SEC", "2.5"))
 CB_FAIL_THRESHOLD = int(os.environ.get("CB_FAIL_THRESHOLD", "3"))
 CB_OPEN_SEC = float(os.environ.get("CB_OPEN_SEC", "10"))
 
-CORE_LOAD_LOCK = threading.Lock()
-CORE_SAVE_LOCK = threading.Lock()
-RT_LOAD_LOCK = threading.Lock()
-RT_SAVE_LOCK = threading.Lock()
+LOAD_LOCK_CORE = threading.Lock()
+SAVE_LOCK_CORE = threading.Lock()
+LOAD_LOCK_RT = threading.Lock()
+SAVE_LOCK_RT = threading.Lock()
 
 
 def _github_headers(extra: dict = None):
@@ -130,70 +159,72 @@ def get_default_core():
         },
         KEY_THREADS_JARVIS: {},
         KEY_THREADS_SPARKSIGN: {},
+        KEY_SPARKSIGN_SETTINGS: {},
         KEY_LINK_SETTINGS: {},
         KEY_LINK_WHITELIST: {},
     }
 
 
-def get_default_rt():
+def get_default_rt_jarvis():
     return {
         KEY_LINK_VIOLATIONS: {},
         KEY_LOGS: [],
     }
 
 
-def _ensure_defaults_core(d: dict) -> dict:
-    if not isinstance(d, dict):
-        d = {}
+def _ensure_core_defaults(loaded: dict) -> dict:
+    if not isinstance(loaded, dict):
+        loaded = {}
 
-    # Threads migration fallback (just in case)
-    if KEY_THREADS_JARVIS not in d:
-        if isinstance(d.get("allowed_threads_mark"), dict):
-            d[KEY_THREADS_JARVIS] = d.get("allowed_threads_mark") or {}
-        elif isinstance(d.get("allowed_threads"), dict):
-            d[KEY_THREADS_JARVIS] = d.get("allowed_threads") or {}
+    # threads migration
+    if KEY_THREADS_JARVIS not in loaded:
+        if isinstance(loaded.get("allowed_threads_mark"), dict):
+            loaded[KEY_THREADS_JARVIS] = loaded.get("allowed_threads_mark") or {}
+        elif isinstance(loaded.get("allowed_threads"), dict):
+            loaded[KEY_THREADS_JARVIS] = loaded.get("allowed_threads") or {}
         else:
-            d[KEY_THREADS_JARVIS] = {}
+            loaded[KEY_THREADS_JARVIS] = {}
 
-    d.setdefault(KEY_THREADS_SPARKSIGN, {})
-    d.setdefault(KEY_ADMINS, get_default_core()[KEY_ADMINS])
-    d.setdefault(KEY_LINK_SETTINGS, {})
-    d.setdefault(KEY_LINK_WHITELIST, {})
+    loaded.setdefault(KEY_THREADS_SPARKSIGN, {})
+    loaded.setdefault(KEY_SPARKSIGN_SETTINGS, {})
+    loaded.setdefault(KEY_ADMINS, get_default_core()[KEY_ADMINS])
+    loaded.setdefault(KEY_LINK_SETTINGS, {})
+    loaded.setdefault(KEY_LINK_WHITELIST, {})
 
-    # Type safety
-    if not isinstance(d.get(KEY_ADMINS), dict):
-        d[KEY_ADMINS] = get_default_core()[KEY_ADMINS]
-    if not isinstance(d.get(KEY_THREADS_JARVIS), dict):
-        d[KEY_THREADS_JARVIS] = {}
-    if not isinstance(d.get(KEY_THREADS_SPARKSIGN), dict):
-        d[KEY_THREADS_SPARKSIGN] = {}
-    if not isinstance(d.get(KEY_LINK_SETTINGS), dict):
-        d[KEY_LINK_SETTINGS] = {}
-    if not isinstance(d.get(KEY_LINK_WHITELIST), dict):
-        d[KEY_LINK_WHITELIST] = {}
+    # type safety
+    if not isinstance(loaded.get(KEY_THREADS_JARVIS), dict):
+        loaded[KEY_THREADS_JARVIS] = {}
+    if not isinstance(loaded.get(KEY_THREADS_SPARKSIGN), dict):
+        loaded[KEY_THREADS_SPARKSIGN] = {}
+    if not isinstance(loaded.get(KEY_SPARKSIGN_SETTINGS), dict):
+        loaded[KEY_SPARKSIGN_SETTINGS] = {}
+    if not isinstance(loaded.get(KEY_ADMINS), dict):
+        loaded[KEY_ADMINS] = get_default_core()[KEY_ADMINS]
+    if not isinstance(loaded.get(KEY_LINK_SETTINGS), dict):
+        loaded[KEY_LINK_SETTINGS] = {}
+    if not isinstance(loaded.get(KEY_LINK_WHITELIST), dict):
+        loaded[KEY_LINK_WHITELIST] = {}
 
-    return d
-
-
-def _ensure_defaults_rt(d: dict) -> dict:
-    if not isinstance(d, dict):
-        d = {}
-    d.setdefault(KEY_LINK_VIOLATIONS, {})
-    d.setdefault(KEY_LOGS, [])
-
-    if not isinstance(d.get(KEY_LINK_VIOLATIONS), dict):
-        d[KEY_LINK_VIOLATIONS] = {}
-    if not isinstance(d.get(KEY_LOGS), list):
-        d[KEY_LOGS] = []
-
-    return d
+    return loaded
 
 
-def _gist_get(gist_id: str, filename: str, cache: dict) -> dict:
-    if not gist_id:
-        raise RuntimeError("missing gist id")
+def _ensure_rt_defaults(loaded: dict) -> dict:
+    if not isinstance(loaded, dict):
+        loaded = {}
+    loaded.setdefault(KEY_LINK_VIOLATIONS, {})
+    loaded.setdefault(KEY_LOGS, [])
+    if not isinstance(loaded.get(KEY_LINK_VIOLATIONS), dict):
+        loaded[KEY_LINK_VIOLATIONS] = {}
+    if not isinstance(loaded.get(KEY_LOGS), list):
+        loaded[KEY_LOGS] = []
+    return loaded
 
-    url = f"https://api.github.com/gists/{gist_id}"
+
+def _gist_get_by_id(gid: str, filename: str, cache: dict, ensure_fn):
+    if not gid:
+        raise RuntimeError("no gist id")
+    url = f"https://api.github.com/gists/{gid}"
+
     extra = {}
     if cache.get("etag"):
         extra["If-None-Match"] = cache["etag"]
@@ -201,7 +232,7 @@ def _gist_get(gist_id: str, filename: str, cache: dict) -> dict:
     r = requests.get(url, headers=_github_headers(extra), timeout=12)
 
     if r.status_code == 304:
-        return None
+        return None  # no change
 
     if r.status_code != 200:
         raise RuntimeError(f"gist get failed: {r.status_code} {getattr(r, 'text', '')[:180]}")
@@ -213,28 +244,28 @@ def _gist_get(gist_id: str, filename: str, cache: dict) -> dict:
     gist_data = r.json() or {}
     files = gist_data.get("files") or {}
     if filename not in files:
-        # 不自動 patch（避免把空內容寫回），直接視為 read error，走 stale
-        raise RuntimeError(f"gist missing file: {filename}")
+        # file missing: do NOT overwrite with empty; create minimal defaults for this side only
+        defaults = ensure_fn({})
+        _gist_patch_by_id(gid, filename, defaults, cache)
+        return defaults
 
     content = (files[filename] or {}).get("content", "") or ""
     loaded = json.loads(content) if content else {}
-    return loaded
+    return ensure_fn(loaded)
 
 
-def _gist_patch(gist_id: str, filename: str, data_to_save: dict, cache: dict):
-    if not gist_id:
-        raise RuntimeError("missing gist id")
-
+def _gist_patch_by_id(gid: str, filename: str, data_to_save: dict, cache: dict):
+    if not gid:
+        raise RuntimeError("no gist id")
     files = {filename: {"content": json.dumps(data_to_save, ensure_ascii=False, indent=2)}}
     r = requests.patch(
-        f"https://api.github.com/gists/{gist_id}",
+        f"https://api.github.com/gists/{gid}",
         headers=_github_headers(),
         json={"files": files},
         timeout=12,
     )
     if r.status_code not in (200, 201):
         raise RuntimeError(f"gist patch failed: {r.status_code} {getattr(r, 'text', '')[:200]}")
-
     etag = r.headers.get("ETag")
     if etag:
         cache["etag"] = etag
@@ -242,100 +273,95 @@ def _gist_patch(gist_id: str, filename: str, data_to_save: dict, cache: dict):
 
 def refresh_core(force: bool = False):
     global CORE_DATA
-
     if not GIST_TOKEN or not GIST_ID_CORE:
         if not CORE_DATA:
             CORE_DATA = get_default_core()
         return
 
     now = _now()
-    if (not force) and CORE_DATA and (now - float(CORE_CACHE.get("loaded_ts", 0) or 0) < CORE_TTL_SEC):
+    if (not force) and CORE_DATA and (now - float(CORE_CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
         return
-
     if _cb_is_open(CORE_CACHE):
         if not CORE_DATA:
             CORE_DATA = get_default_core()
         return
 
-    acquired = CORE_LOAD_LOCK.acquire(timeout=0.15)
-    if not acquired:
+    if not LOAD_LOCK_CORE.acquire(timeout=0.15):
         if not CORE_DATA:
             CORE_DATA = get_default_core()
         return
 
     try:
         now = _now()
-        if (not force) and CORE_DATA and (now - float(CORE_CACHE.get("loaded_ts", 0) or 0) < CORE_TTL_SEC):
+        if (not force) and CORE_DATA and (now - float(CORE_CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
             return
 
-        loaded = _gist_get(GIST_ID_CORE, CORE_FILENAME, CORE_CACHE)
+        loaded = _gist_get_by_id(GIST_ID_CORE, CORE_FILENAME, CORE_CACHE, _ensure_core_defaults)
         if loaded is None:
             CORE_CACHE["loaded_ts"] = now
             _cb_record_success(CORE_CACHE)
             return
-
-        CORE_DATA = _ensure_defaults_core(loaded)
+        CORE_DATA = loaded
         CORE_CACHE["loaded_ts"] = now
         _cb_record_success(CORE_CACHE)
-
     except Exception as e:
         _cb_record_failure(CORE_CACHE, f"refresh_core: {e}")
         if not CORE_DATA:
             CORE_DATA = get_default_core()
     finally:
         try:
-            CORE_LOAD_LOCK.release()
+            LOAD_LOCK_CORE.release()
         except Exception:
             pass
 
 
 def refresh_rt(force: bool = False):
     global RT_DATA
-
     if not GIST_TOKEN or not GIST_ID_RT_JARVIS:
         if not RT_DATA:
-            RT_DATA = get_default_rt()
+            RT_DATA = get_default_rt_jarvis()
         return
 
     now = _now()
-    if (not force) and RT_DATA and (now - float(RT_CACHE.get("loaded_ts", 0) or 0) < RT_TTL_SEC):
+    if (not force) and RT_DATA and (now - float(RT_CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
         return
-
     if _cb_is_open(RT_CACHE):
         if not RT_DATA:
-            RT_DATA = get_default_rt()
+            RT_DATA = get_default_rt_jarvis()
         return
 
-    acquired = RT_LOAD_LOCK.acquire(timeout=0.15)
-    if not acquired:
+    if not LOAD_LOCK_RT.acquire(timeout=0.15):
         if not RT_DATA:
-            RT_DATA = get_default_rt()
+            RT_DATA = get_default_rt_jarvis()
         return
 
     try:
         now = _now()
-        if (not force) and RT_DATA and (now - float(RT_CACHE.get("loaded_ts", 0) or 0) < RT_TTL_SEC):
+        if (not force) and RT_DATA and (now - float(RT_CACHE.get("loaded_ts", 0) or 0) < DATA_TTL_SEC):
             return
 
-        loaded = _gist_get(GIST_ID_RT_JARVIS, RT_FILENAME, RT_CACHE)
+        loaded = _gist_get_by_id(GIST_ID_RT_JARVIS, RT_FILENAME, RT_CACHE, _ensure_rt_defaults)
         if loaded is None:
             RT_CACHE["loaded_ts"] = now
             _cb_record_success(RT_CACHE)
             return
-
-        RT_DATA = _ensure_defaults_rt(loaded)
+        RT_DATA = loaded
         RT_CACHE["loaded_ts"] = now
         _cb_record_success(RT_CACHE)
-
     except Exception as e:
         _cb_record_failure(RT_CACHE, f"refresh_rt: {e}")
         if not RT_DATA:
-            RT_DATA = get_default_rt()
+            RT_DATA = get_default_rt_jarvis()
     finally:
         try:
-            RT_LOAD_LOCK.release()
+            LOAD_LOCK_RT.release()
         except Exception:
             pass
+
+
+def refresh_data(force: bool = False):
+    refresh_core(force=force)
+    refresh_rt(force=force)
 
 
 def mark_dirty_core():
@@ -349,86 +375,65 @@ def mark_dirty_rt():
 
 
 def flush_core_if_due(force: bool = False):
-    if not GIST_TOKEN or not GIST_ID_CORE:
+    if not GIST_TOKEN or not GIST_ID_CORE or not CORE_DATA or not CORE_CACHE.get("dirty"):
         return
-    if not CORE_DATA or not CORE_CACHE.get("dirty", False):
-        return
-
     now = _now()
-    if (not force) and (now - float(CORE_CACHE.get("dirty_ts", 0) or 0) < CORE_SAVE_DEBOUNCE_SEC):
+    if (not force) and (now - float(CORE_CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
         return
-
     if _cb_is_open(CORE_CACHE):
         return
-
-    acquired = CORE_SAVE_LOCK.acquire(timeout=0.15)
-    if not acquired:
+    if not SAVE_LOCK_CORE.acquire(timeout=0.15):
         return
 
     try:
         now = _now()
-        if (not force) and (now - float(CORE_CACHE.get("dirty_ts", 0) or 0) < CORE_SAVE_DEBOUNCE_SEC):
+        if (not force) and (now - float(CORE_CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
             return
-
         CORE_CACHE["last_flush_ts"] = now
-        _gist_patch(GIST_ID_CORE, CORE_FILENAME, CORE_DATA, CORE_CACHE)
+        _gist_patch_by_id(GIST_ID_CORE, CORE_FILENAME, CORE_DATA, CORE_CACHE)
         CORE_CACHE["dirty"] = False
         CORE_CACHE["last_ok_flush_ts"] = now
         _cb_record_success(CORE_CACHE)
-
     except Exception as e:
         _cb_record_failure(CORE_CACHE, f"flush_core: {e}")
     finally:
         try:
-            CORE_SAVE_LOCK.release()
+            SAVE_LOCK_CORE.release()
         except Exception:
             pass
 
 
 def flush_rt_if_due(force: bool = False):
-    if not GIST_TOKEN or not GIST_ID_RT_JARVIS:
+    if not GIST_TOKEN or not GIST_ID_RT_JARVIS or not RT_DATA or not RT_CACHE.get("dirty"):
         return
-    if not RT_DATA or not RT_CACHE.get("dirty", False):
-        return
-
     now = _now()
-    if (not force) and (now - float(RT_CACHE.get("dirty_ts", 0) or 0) < RT_SAVE_DEBOUNCE_SEC):
+    if (not force) and (now - float(RT_CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
         return
-
     if _cb_is_open(RT_CACHE):
         return
-
-    acquired = RT_SAVE_LOCK.acquire(timeout=0.15)
-    if not acquired:
+    if not SAVE_LOCK_RT.acquire(timeout=0.15):
         return
 
     try:
         now = _now()
-        if (not force) and (now - float(RT_CACHE.get("dirty_ts", 0) or 0) < RT_SAVE_DEBOUNCE_SEC):
+        if (not force) and (now - float(RT_CACHE.get("dirty_ts", 0) or 0) < SAVE_DEBOUNCE_SEC):
             return
-
         RT_CACHE["last_flush_ts"] = now
-        _gist_patch(GIST_ID_RT_JARVIS, RT_FILENAME, RT_DATA, RT_CACHE)
+        _gist_patch_by_id(GIST_ID_RT_JARVIS, RT_FILENAME, RT_DATA, RT_CACHE)
         RT_CACHE["dirty"] = False
         RT_CACHE["last_ok_flush_ts"] = now
         _cb_record_success(RT_CACHE)
-
     except Exception as e:
         _cb_record_failure(RT_CACHE, f"flush_rt: {e}")
     finally:
         try:
-            RT_SAVE_LOCK.release()
+            SAVE_LOCK_RT.release()
         except Exception:
             pass
 
 
-def refresh_data(force: bool = False):
-    refresh_core(force=force)
-    refresh_rt(force=force)
-
-
-def opportunistic_flush(force: bool = False):
-    # 核心低頻，但管理員操作也會改 core；RT 高頻
+def try_flush_dirty(force: bool = False):
+    # Opportunistic flush, split
     flush_core_if_due(force=force)
     flush_rt_if_due(force=force)
 
@@ -445,7 +450,7 @@ def update_rt(key, value):
     mark_dirty_rt()
 
 
-# initial load (best effort)
+# initial best-effort load
 refresh_data(force=True)
 
 # ================== Data Accessors ==================
@@ -500,7 +505,7 @@ def add_admin(admin_id: int, added_by: int) -> bool:
         return False
     admins[s] = {
         "added_by": added_by,
-        "added_time": _now_iso(),
+        "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat(),
         "is_super": False,
     }
     update_core(KEY_ADMINS, admins)
@@ -572,17 +577,12 @@ def send_message(chat_id, text, markup=None, thread_id=None, parse_mode=None, en
 
         return tg("sendMessage", payload, timeout=8)
     except Exception as e:
-        print(f"send_message err: {e}")
+        print(f"傳送訊息錯誤: {e}")
         return None
 
 
 def edit_message_text(chat_id, message_id, text, markup=None, parse_mode=None, entities=None, disable_preview=True):
-    payload = {
-        "chat_id": chat_id,
-        "message_id": int(message_id),
-        "text": text,
-        "disable_web_page_preview": bool(disable_preview),
-    }
+    payload = {"chat_id": chat_id, "message_id": int(message_id), "text": text, "disable_web_page_preview": bool(disable_preview)}
     if markup:
         payload["reply_markup"] = _prepare_reply_markup(markup)
     if entities:
@@ -630,6 +630,9 @@ def get_display_name(user_info):
 
 
 def group_user_label(user_id: int) -> str:
+    """
+    群組內顯示用：永不顯示 UID
+    """
     try:
         uinfo = get_user_info(int(user_id))
         return get_display_name(uinfo) if uinfo else "未知用戶"
@@ -686,10 +689,10 @@ def restrict_member(chat_id: int, user_id: int, until_ts: int):
             "can_change_info": False,
             "can_invite_users": False,
             "can_pin_messages": False,
+            "can_manage_topics": False,
         },
     }
     return tg("restrictChatMember", payload, timeout=10)
-
 
 
 def ban_member(chat_id: int, user_id: int):
@@ -715,7 +718,7 @@ def log_action(admin_id, action, target=None, details=None):
     admin_name = get_display_name(admin_info) if admin_info else str(admin_id)
 
     log_entry = {
-        "timestamp": _now_iso(),
+        "timestamp": datetime.datetime.now(TAIWAN_TZ).isoformat(),
         "admin_id": admin_id,
         "admin_name": admin_name,
         "action": action,
@@ -776,12 +779,12 @@ def should_process(update, user_id, text):
 # ================== Commands / UI ==================
 VOTE_LINKS = [
     ("𝘿𝙚𝙭𝙎𝙘𝙧𝙚𝙚𝙣𝙚𝙧", "https://dexscreener.com/solana/83qieesqnkd3hkymd87rbfnamtthfvbumwvvgvkdtz5w"),
-    ("𝙂𝙚𝙘𝙠𝙤𝙏𝙚𝙧𝙢𝙞𝙣𝙖𝙡", "https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults"),
+    ("𝙂𝙚𝙘𝙠𝙤𝙏𝙚𝙧𝙢𝙞𝙣𝙖𝙡","https://www.geckoterminal.com/solana/pools/83QiEeSqNKd3HkYMd87rbfnaMTThfvBUmwVVGvKdtZ5W?utm_source=coingecko&utm_medium=referral&utm_campaign=searchresults"),
     ("𝘽𝙞𝙩𝙜𝙚𝙩𝙎𝙬𝙖𝙥", "https://web3.bitget.com/zh-TC/swap/sol/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
-    ("𝙆𝙪𝘾𝙤𝙞𝙣𝙒𝙚𝙗𝟯", "https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142"),
+    ("𝙆𝙪𝘾𝙤𝙞𝙣𝙒𝙚𝙗𝟯","https://www.kucoin.com/zh-hant/web3/swap?inputCurrency=2514&outputCurrency=6783142"),
     ("𝙇𝙞𝙫𝙚𝘾𝙤𝙞𝙣𝙒𝙖𝙩𝙘𝙝", "https://www.livecoinwatch.com/price/10KDOG-10KDOG"),
     ("𝘾𝙤𝙞𝙣𝙎𝙣𝙞𝙥𝙚𝙧", "https://coinsniper.net/coin/87574"),
-    ("𝙏𝙤𝙥𝟭𝟬𝟬𝙏𝙤𝙠𝙚𝙣", "https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
+    ("𝙏𝙤𝙥𝟭𝟬𝟬𝙏𝙤𝙠𝙚𝙣","https://top100token.com/solana/C9HwNWaVVecVm35raAaZBXEa4sQF3hGXszhGKpy3pump"),
     ("𝘾𝙤𝙞𝙣𝘾𝙖𝙩𝙖𝙥𝙪𝙡𝙩", "https://coincatapult.com/coin/10k-dog-10k-dog"),
     ("𝘾𝙤𝙞𝙣𝙎𝙘𝙤𝙥𝙚", "https://www.coinscope.co/coin/10k-dog"),
     ("𝘾𝙤𝙞𝙣𝘽𝙤𝙤𝙢", "https://coinboom.net/coin/10k-dog"),
@@ -791,11 +794,11 @@ VOTE_LINKS = [
 SOCIAL_MEDIA_LINKS = [
     ("𝙓", "https://x.com/10Kdogcoin"),
     ("𝙏𝙝𝙧𝙚𝙖𝙙𝙨", "https://www.threads.com/@_10kdog_"),
-    ("𝙄𝙂", "https://www.instagram.com/_10kdog_/"),
+    ("𝙄𝙂","https://www.instagram.com/_10kdog_/",),
     ("𝘿𝙞𝙨𝙘𝙤𝙧𝙙", "https://discord.gg/10kdog"),
     ("𝙔𝙤𝙪𝙏𝙪𝙗𝙚主頻道", "https://www.youtube.com/@10KDOGGOES1"),
     ("𝙔𝙤𝙪𝙏𝙪𝙗𝙚交易教學", "https://www.youtube.com/@10KTrading-z2k"),
-    ("𝙊𝙙𝙮𝙨𝙚𝙚", "https://odysee.com/@10KDOGGOES1:e"),
+    ("𝙊𝙙𝙮𝙨𝙚𝙚", "https://odysee.com/@10KDOGGOES1:e")
 ]
 
 
@@ -875,7 +878,7 @@ def main_menu():
     }
 
 
-# ================== Link moderation ==================
+# ================== Link moderation: detect / whitelist / violations ==================
 LINK_REGEX = re.compile(r"(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|discord\.gg/)", re.I)
 
 
@@ -939,7 +942,7 @@ def whitelist_add(chat_id: int, user_id: int, added_by: int) -> bool:
     uid = str(int(user_id))
     if uid in wl[ck]:
         return False
-    wl[ck][uid] = {"added_by": int(added_by), "added_time": _now_iso()}
+    wl[ck][uid] = {"added_by": int(added_by), "added_time": datetime.datetime.now(TAIWAN_TZ).isoformat()}
     update_core(KEY_LINK_WHITELIST, wl)
     return True
 
@@ -975,7 +978,7 @@ def inc_violation(chat_id: int, user_id: int) -> int:
     vio.setdefault(ck, {})
     rec = vio[ck].get(uid) or {}
     c = int(rec.get("count", 0) or 0) + 1
-    vio[ck][uid] = {"count": c, "last_time": _now_iso()}
+    vio[ck][uid] = {"count": c, "last_time": datetime.datetime.now(TAIWAN_TZ).isoformat()}
     update_rt(KEY_LINK_VIOLATIONS, vio)
     return c
 
@@ -1205,6 +1208,15 @@ def get_thread_list_with_names(scope="jarvis"):
     return msg
 
 
+# ================== Premium Emoji ID feature ==================
+def handle_premium_emoji_id_message(msg, chat_id):
+    emoji_id = extract_first_custom_emoji_id(msg)
+    if emoji_id:
+        send_message(chat_id, emoji_id)
+        return True
+    return False
+
+
 # ================== Admin UI: sessions / lock / panels ==================
 SESS = {}  # { user_id: {waiting_for, expires, return_panel, active_panel_mid, active_chat_id} }
 SESSION_TTL = 180
@@ -1321,7 +1333,7 @@ def _managed_chat_ids():
         try:
             ids.add(int(ck))
         except:
-            pass
+        pass
 
     ids = {i for i in ids if str(i).startswith("-100")}
     return sorted(list(ids))
@@ -1360,6 +1372,7 @@ def admin_main_panel():
     return {"inline_keyboard": [
         [{"text": "👑 管理員設定", "callback_data": "p_admin"}],
         [{"text": "🛠️ 群組設定", "callback_data": "p_group"}],
+        [{"text": "🧩 取得 Premium Emoji ID", "callback_data": "p_premium"}],
         [{"text": "📊 操作紀錄", "callback_data": "p_logs"}],
     ]}
 
@@ -1514,6 +1527,7 @@ def _delete_group_admin_cmd(chat_id: int, update: dict):
 
 def handle_group_admin(text, chat_id, user_id, update):
     cmd = normalize_cmd(text)
+
     thread_id = (update.get("message") or {}).get("message_thread_id", 0)
     admin_name = group_user_label(user_id)
 
@@ -1684,6 +1698,10 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         send_or_edit_panel(chat_id, mid, "🛠️ 群組設定", admin_group_panel(int(user_id)))
         return
 
+    if data_cb == "p_premium":
+        send_message(chat_id, "請直接傳送一個 Telegram Premium Emoji 給我，我會回覆它的 custom_emoji_id（純 ID）。\n注意：一般 emoji 不會有 ID。")
+        return
+
     # submenu: logs
     if data_cb == "p_logs":
         logs = (get_logs() or [])[-12:]
@@ -1844,345 +1862,301 @@ def handle_callback(data_cb, chat_id, user_id, message_thread_id=None):
         show_subpanel(
             chat_id,
             mid,
-            "🛠️ 群組設定說明",
-            "1) 先用「🏷️ 目前群組」選擇要管理的群組\n"
-            "2) 🔗 連結：開/關 連結違規處置\n"
-            "3) 🔇 禁言：設定第 2 次違規的禁言天數\n"
-            "4) 👢 第三次：切換第 3 次違規處置（踢出/封鎖）\n"
-            "5) ✅ 白名單：可用面板輸入 UID 加/移白名單；群組內也可回覆訊息用 /admin_add_wl\n"
-            "6) 📌 違規名單：查看/移除（輸入 UID）\n",
-            "p_group",
+            "🛠️ 群組指令說明",
+            "🛠️ 群組話題授權（只透過 Jarvis 操作）：\n"
+            "/admin_add_jarvis - 允許當前話題（Jarvis）\n"
+            "/admin_remove_jarvis - 移除當前話題（Jarvis）\n\n"
+            "✨ SparkSign 話題授權（仍由 Jarvis 操作）：\n"
+            "/admin_add_sparksign - 允許當前話題（SparkSign）\n"
+            "/admin_remove_sparksign - 移除當前話題（SparkSign）\n\n"
+            "🔗 白名單（群組內由管理員使用，需回覆目標用戶訊息）：\n"
+            "/admin_add_wl - 加入白名單\n"
+            "/admin_remove_wl - 移除白名單\n",
+            "p_group"
         )
         return
 
-    # ---- UID query quick actions ----
     if data_cb.startswith("copy_"):
-        try:
-            uid = int(data_cb.split("_", 1)[1])
-            send_message(chat_id, f"✅ UID：<code>{uid}</code>", parse_mode="HTML", disable_preview=True)
-        except:
-            pass
+        send_message(chat_id, data_cb.replace("copy_", ""))
         return
 
-    if data_cb.startswith("add_"):
+    if data_cb.startswith("add_") and is_super_admin(user_id):
         try:
-            uid = int(data_cb.split("_", 1)[1])
-            if not is_super_admin(int(user_id)):
-                send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
-                return
-            if add_admin(uid, int(user_id)):
-                send_message(chat_id, f"✅ 已新增管理員：{uid}")
-                log_action(int(user_id), "add_admin", target=uid)
-            else:
-                send_message(chat_id, f"⚠️ 該用戶已是管理員：{uid}")
+            uid = int(data_cb.replace("add_", ""))
+            ok = add_admin(uid, user_id)
+            send_message(chat_id, f"✅ 已新增用戶 {uid} 為管理員" if ok else f"❌ 用戶 {uid} 已經是管理員")
+            if ok:
+                log_action(user_id, "add_admin", uid)
         except:
-            pass
+            send_message(chat_id, "❌ 操作失敗")
         return
 
     if data_cb.startswith("wladd_"):
         try:
-            uid = int(data_cb.split("_", 1)[1])
+            uid = int(data_cb.replace("wladd_", ""))
             cid = _get_active_chat_id(int(user_id))
             if not cid:
-                send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
+                send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
                 return
             ok = whitelist_add(cid, uid, int(user_id))
+            send_message(chat_id, "✅ 已加入白名單" if ok else "⚠️ 白名單已存在")
             if ok:
-                send_message(chat_id, f"✅ 已加入白名單：{uid}\n群組：{_chat_title(cid)}")
-                log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid})
-            else:
-                send_message(chat_id, f"⚠️ 白名單已存在：{uid}")
+                log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid, "src": "uid_query_button"})
+            try_flush_dirty(force=True)
         except:
-            pass
+            send_message(chat_id, "❌ 操作失敗")
         return
 
     if data_cb.startswith("wlrm_"):
         try:
-            uid = int(data_cb.split("_", 1)[1])
+            uid = int(data_cb.replace("wlrm_", ""))
             cid = _get_active_chat_id(int(user_id))
             if not cid:
-                send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
+                send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
                 return
             ok = whitelist_remove(cid, uid)
+            send_message(chat_id, "✅ 已移除白名單" if ok else "⚠️ 白名單不存在")
             if ok:
-                send_message(chat_id, f"✅ 已移除白名單：{uid}\n群組：{_chat_title(cid)}")
-                log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid})
-            else:
-                send_message(chat_id, f"⚠️ 白名單不存在：{uid}")
+                log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid, "src": "uid_query_button"})
+            try_flush_dirty(force=True)
         except:
-            pass
+            send_message(chat_id, "❌ 操作失敗")
         return
 
-    # unknown callback
-    return
+
+# ================== Routes ==================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        # 1) 先把到期的 dirty 合併寫回（不阻塞）
+        try_flush_dirty(force=False)
+
+        update = request.get_json(force=True, silent=True) or {}
+
+        # Callback query
+        if "callback_query" in update:
+            cb = update["callback_query"]
+            data_cb = cb["data"]
+            chat_id = cb["message"]["chat"]["id"]
+            user_id = cb["from"]["id"]
+            is_private = not str(chat_id).startswith("-100")
+
+            if is_private and is_admin(int(user_id)):
+                try:
+                    _get_sess(int(user_id))["active_panel_mid"] = cb["message"]["message_id"]
+                except:
+                    pass
+
+            thread_id = None if is_private else cb["message"].get("message_thread_id", 0)
+            handle_callback(data_cb, chat_id, user_id, thread_id)
+            answer_callback(cb["id"])
+            return "OK"
+
+        # Messages
+        if "message" in update:
+            msg = update["message"]
+            chat_id = msg["chat"]["id"]
+            user_id = (msg.get("from") or {}).get("id")
+            is_private = not str(chat_id).startswith("-100")
+            text = msg.get("text", "") or ""
+
+            # Group link moderation FIRST
+            if not is_private:
+                handled = apply_link_moderation(msg)
+                if handled:
+                    return "OK"
+
+            # Premium Emoji ID
+            if is_private and user_id and is_admin(int(user_id)):
+                if handle_premium_emoji_id_message(msg, chat_id):
+                    return "OK"
+
+            # Private admin panel input flow
+            if is_private and user_id and is_admin(int(user_id)):
+                # (A) 轉發查 UID（避免跟指令衝突）
+                if ("forward_from" in msg) and (not (text or "").strip().startswith("/")):
+                    handle_uid_query(update, chat_id)
+                    return "OK"
+
+                # (B) 等待輸入（面板設定鎖）
+                s = _get_sess(int(user_id))
+                waiting = s.get("waiting_for")
+
+                if waiting:
+                    refresh_setting_lock(int(user_id))
+
+                    raw = (text or "").strip()
+
+                    # 任何 /cancel 直接取消
+                    if raw.lower() in ("/cancel", "cancel"):
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        send_message(chat_id, "✅ 已取消本次設定。")
+                        return "OK"
+
+                    # ---- 各種等待狀態處理 ----
+                    if waiting == "admin_add_uid":
+                        try:
+                            uid = int(raw)
+                            if not is_super_admin(int(user_id)):
+                                send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
+                            else:
+                                ok = add_admin(uid, int(user_id))
+                                send_message(chat_id, f"✅ 已新增管理員: {uid}" if ok else f"⚠️ 用戶 {uid} 已經是管理員")
+                                if ok:
+                                    log_action(int(user_id), "add_admin", target=uid)
+                            try_flush_dirty(force=True)
+                        except:
+                            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    if waiting == "admin_remove_uid":
+                        try:
+                            uid = int(raw)
+                            ok, msg2 = remove_admin(uid, int(user_id))
+                            send_message(chat_id, msg2)
+                            if ok:
+                                log_action(int(user_id), "remove_admin", target=uid)
+                            try_flush_dirty(force=True)
+                        except:
+                            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    if waiting == "mute_days":
+                        cid = _get_active_chat_id(int(user_id))
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                        else:
+                            try:
+                                days = int(float(raw))
+                                if days < 1:
+                                    days = 1
+                                conf = get_link_settings(cid)
+                                conf["mute_days"] = days
+                                set_link_settings(cid, conf)
+                                log_action(int(user_id), "link_set_mute_days", details={"chat_id": cid, "mute_days": days})
+                                send_message(chat_id, f"✅ 已設定第二次違規禁言：{days} 天")
+                                try_flush_dirty(force=True)
+                            except:
+                                send_message(chat_id, "❌ 請輸入整數天數（例如 1 / 3 / 7）")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    if waiting == "vio_remove_uid":
+                        cid = _get_active_chat_id(int(user_id))
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                        else:
+                            try:
+                                uid = int(raw)
+                                ok = clear_violation(cid, uid)
+                                send_message(chat_id, "✅ 已移除違規名單" if ok else "⚠️ 找不到此 UID 的違規紀錄")
+                                if ok:
+                                    log_action(int(user_id), "vio_remove", target=uid, details={"chat_id": cid})
+                                try_flush_dirty(force=True)
+                            except:
+                                send_message(chat_id, "❌ 請輸入有效的 UID 數字")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    if waiting == "wl_add_uid":
+                        cid = _get_active_chat_id(int(user_id))
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                        else:
+                            try:
+                                uid = int(raw)
+                                ok = whitelist_add(cid, uid, int(user_id))
+                                send_message(chat_id, "✅ 已加入白名單" if ok else "⚠️ 白名單已存在")
+                                if ok:
+                                    log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid, "src": "panel_input"})
+                                try_flush_dirty(force=True)
+                            except:
+                                send_message(chat_id, "❌ 請輸入有效的 UID 數字")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    if waiting == "wl_remove_uid":
+                        cid = _get_active_chat_id(int(user_id))
+                        if not cid:
+                            send_message(chat_id, "❌ 尚未選擇群組（群組設定 → 選擇群組）")
+                        else:
+                            try:
+                                uid = int(raw)
+                                ok = whitelist_remove(cid, uid)
+                                send_message(chat_id, "✅ 已移除白名單" if ok else "⚠️ 白名單不存在")
+                                if ok:
+                                    log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid, "src": "panel_input"})
+                                try_flush_dirty(force=True)
+                            except:
+                                send_message(chat_id, "❌ 請輸入有效的 UID 數字")
+                        clear_wait(int(user_id))
+                        release_setting_lock(int(user_id))
+                        return "OK"
+
+                    # fallback：未知等待狀態
+                    clear_wait(int(user_id))
+                    release_setting_lock(int(user_id))
+                    send_message(chat_id, "⚠️ 設定狀態已失效，請重新開啟 /admin 面板操作。")
+                    return "OK"
+
+            # Group admin commands
+            if (not is_private) and user_id and is_admin(int(user_id)):
+                cmd0 = normalize_cmd(text)
+                if cmd0 in (
+                    "/admin_add_jarvis", "/admin_remove_jarvis",
+                    "/admin_add_sparksign", "/admin_remove_sparksign",
+                    "/admin_add_wl", "/admin_remove_wl",
+                ):
+                    handle_group_admin(text, chat_id, int(user_id), update)
+                    try_flush_dirty(force=False)
+                    return "OK"
+
+            # Normal user commands / callbacks from menu
+            if text:
+                handle_user_command(text, chat_id, is_private, update)
+
+            try_flush_dirty(force=False)
+            return "OK"
+
+        return "OK"
+
+    except Exception as e:
+        print("[WEBHOOK_ERR]", e)
+        return "OK"
 
 
-# ================== Private text input (panel waiting_for) ==================
-def handle_private_waiting_text(chat_id: int, user_id: int, text: str):
-    s = _get_sess(int(user_id))
-    state = s.get("waiting_for")
-    if not state:
-        return False
-
-    refresh_setting_lock(int(user_id))
-
-    # ---- admin add/remove by uid ----
-    if state == "admin_add_uid":
-        if not is_super_admin(int(user_id)):
-            send_message(chat_id, "❌ 只有超級管理員可以新增管理員")
-            clear_wait(int(user_id))
-            release_setting_lock(int(user_id))
-            return True
-        try:
-            uid = int(text.strip())
-            if add_admin(uid, int(user_id)):
-                send_message(chat_id, f"✅ 已新增管理員：{uid}")
-                log_action(int(user_id), "add_admin", target=uid)
-            else:
-                send_message(chat_id, f"⚠️ 該用戶已是管理員：{uid}")
-        except:
-            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        # keep panel as-is; admin can press buttons again
-        return True
-
-    if state == "admin_remove_uid":
-        try:
-            uid = int(text.strip())
-            ok, msg = remove_admin(uid, int(user_id))
-            send_message(chat_id, msg)
-            if ok:
-                log_action(int(user_id), "remove_admin", target=uid)
-        except:
-            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        return True
-
-    # ---- group settings: mute days ----
-    if state == "mute_days":
-        cid = _get_active_chat_id(int(user_id))
-        if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
-            clear_wait(int(user_id))
-            release_setting_lock(int(user_id))
-            return True
-        try:
-            v = int(float(text.strip()))
-            if v <= 0:
-                v = 1
-            conf = get_link_settings(cid)
-            conf["mute_days"] = v
-            set_link_settings(cid, conf)
-            send_message(chat_id, f"✅ 已設定禁言天數：{v} 天\n群組：{_chat_title(cid)}")
-            log_action(int(user_id), "link_set_mute_days", details={"chat_id": cid, "mute_days": v})
-        except:
-            send_message(chat_id, "❌ 請輸入整數天數，例如 1 / 3 / 7")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        return True
-
-    # ---- violations remove by uid ----
-    if state == "vio_remove_uid":
-        cid = _get_active_chat_id(int(user_id))
-        if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
-            clear_wait(int(user_id))
-            release_setting_lock(int(user_id))
-            return True
-        try:
-            uid = int(text.strip())
-            ok = clear_violation(cid, uid)
-            if ok:
-                send_message(chat_id, f"✅ 已移除違規：{uid}\n群組：{_chat_title(cid)}")
-                log_action(int(user_id), "vio_remove", target=uid, details={"chat_id": cid})
-            else:
-                send_message(chat_id, f"⚠️ 違規名單沒有此 UID：{uid}")
-        except:
-            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        return True
-
-    # ---- whitelist add/remove by uid ----
-    if state == "wl_add_uid":
-        cid = _get_active_chat_id(int(user_id))
-        if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
-            clear_wait(int(user_id))
-            release_setting_lock(int(user_id))
-            return True
-        try:
-            uid = int(text.strip())
-            ok = whitelist_add(cid, uid, int(user_id))
-            if ok:
-                send_message(chat_id, f"✅ 已加入白名單：{uid}\n群組：{_chat_title(cid)}")
-                log_action(int(user_id), "wl_add", target=uid, details={"chat_id": cid})
-            else:
-                send_message(chat_id, f"⚠️ 白名單已存在：{uid}")
-        except:
-            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        return True
-
-    if state == "wl_remove_uid":
-        cid = _get_active_chat_id(int(user_id))
-        if not cid:
-            send_message(chat_id, "❌ 尚未選擇群組（到 🛠️ 群組設定 選擇）")
-            clear_wait(int(user_id))
-            release_setting_lock(int(user_id))
-            return True
-        try:
-            uid = int(text.strip())
-            ok = whitelist_remove(cid, uid)
-            if ok:
-                send_message(chat_id, f"✅ 已移除白名單：{uid}\n群組：{_chat_title(cid)}")
-                log_action(int(user_id), "wl_remove", target=uid, details={"chat_id": cid})
-            else:
-                send_message(chat_id, f"⚠️ 白名單不存在：{uid}")
-        except:
-            send_message(chat_id, "❌ 請輸入有效的 UID 數字")
-            return True
-
-        clear_wait(int(user_id))
-        release_setting_lock(int(user_id))
-        return True
-
-    # fallback: unknown state
-    clear_wait(int(user_id))
-    release_setting_lock(int(user_id))
-    return True
-
-
-# ================== Web routes ==================
-@app.get("/")
-def root():
+@app.route("/", methods=["GET"])
+def health():
     return {
         "status": "ok",
         "bot": BOT_NAME,
         "core_ok": (CORE_CACHE.get("last_err") == ""),
         "rt_ok": (RT_CACHE.get("last_err") == ""),
+        "core_dirty": bool(CORE_CACHE.get("dirty")),
+        "rt_dirty": bool(RT_CACHE.get("dirty")),
     }
 
 
-@app.get("/set_tg_webhook")
+@app.route("/set_tg_webhook", methods=["GET"])
 def set_tg_webhook():
     host = request.headers.get("x-forwarded-host") or request.host
     scheme = request.headers.get("x-forwarded-proto") or "https"
-    url = f"{scheme}://{host}/tg-webhook"
-    r = tg("setWebhook", {"url": url, "drop_pending_updates": True}, timeout=10)
+    url = f"{scheme}://{host}/webhook"
+    r = tg("setWebhook", {"url": url}, timeout=10)
     try:
         return r.json() if r is not None else {"ok": False, "url": url}
     except:
         return {"ok": False, "url": url}
 
 
-@app.post("/tg-webhook")
-def tg_webhook():
-    try:
-        update = request.get_json(force=True, silent=True) or {}
-
-        # best-effort refresh
-        refresh_data(force=False)
-
-        # opportunistic flush: do not block too long
-        opportunistic_flush(force=False)
-
-        # ========== callback_query ==========
-        if "callback_query" in update:
-            cb = update["callback_query"]
-            data_cb = (cb.get("data") or "").strip()
-            answer_callback(cb.get("id"))
-
-            msg = cb.get("message") or {}
-            chat_id = int((msg.get("chat") or {}).get("id"))
-            user_id = int((cb.get("from") or {}).get("id") or 0)
-            thread_id = msg.get("message_thread_id", 0)
-
-            handle_callback(data_cb, chat_id, user_id, message_thread_id=thread_id)
-
-            opportunistic_flush(force=False)
-            return {"ok": True}
-
-        # ========== message ==========
-        if "message" in update:
-            msg = update["message"]
-            chat_id = int((msg.get("chat") or {}).get("id"))
-            user_id = int((msg.get("from") or {}).get("id") or 0)
-            is_private = not str(chat_id).startswith("-100")
-            text = (msg.get("text") or "").strip()
-
-            # group: link moderation first
-            if not is_private:
-                try:
-                    apply_link_moderation(msg)
-                except:
-                    pass
-
-                # group admin commands / normal commands only if allowed
-                if user_id and should_process(update, user_id, text):
-                    if is_admin(user_id) and normalize_cmd(text) in {
-                        "/admin_add_jarvis", "/admin_remove_jarvis",
-                        "/admin_add_sparksign", "/admin_remove_sparksign",
-                        "/admin_add_wl", "/admin_remove_wl",
-                    }:
-                        handle_group_admin(text, chat_id, user_id, update)
-                    else:
-                        if text:
-                            handle_user_command(text, chat_id, is_private=False, update=update)
-
-                opportunistic_flush(force=False)
-                return {"ok": True}
-
-            # private
-            if not user_id:
-                return {"ok": True}
-
-            # UID query: forwarded msg (admin only)
-            if is_admin(user_id) and msg.get("forward_from"):
-                handle_uid_query(update, chat_id)
-    
-            # panel waiting input
-            if is_admin(user_id) and text:
-                if handle_private_waiting_text(chat_id, user_id, text):
-                    opportunistic_flush(force=False)
-                    return {"ok": True}
-
-            # /admin panel open
-            if text:
-                if text == "/admin":
-                    handle_admin_command(text, chat_id, user_id)
-                    opportunistic_flush(force=False)
-                    return {"ok": True}
-
-                # normal user commands
-                handle_user_command(text, chat_id, is_private=True, update=update)
-
-            opportunistic_flush(force=False)
-            return {"ok": True}
-
-        # ignore other update types
-        opportunistic_flush(force=False)
-        return {"ok": True}
-
-    except Exception as e:
-        print("[TG_WEBHOOK_ERR]", e)
-        return {"ok": True}
-
-
-# ================== WSGI entry ==================
 if __name__ == "__main__":
-    # Local dev
+    # local dev only
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))
