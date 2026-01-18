@@ -1333,7 +1333,7 @@ def _managed_chat_ids():
         try:
             ids.add(int(ck))
         except:
-        pass
+            pass
 
     ids = {i for i in ids if str(i).startswith("-100")}
     return sorted(list(ids))
