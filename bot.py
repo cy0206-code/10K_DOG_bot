@@ -686,10 +686,10 @@ def restrict_member(chat_id: int, user_id: int, until_ts: int):
             "can_change_info": False,
             "can_invite_users": False,
             "can_pin_messages": False,
-            "can_manage_topics": False,
         },
     }
     return tg("restrictChatMember", payload, timeout=10)
+
 
 
 def ban_member(chat_id: int, user_id: int):
@@ -2151,10 +2151,9 @@ def tg_webhook():
                 return {"ok": True}
 
             # UID query: forwarded msg (admin only)
-            if is_admin(user_id):
-                if msg.get("forward_from") and (text == "" or text.lower().startswith("/uid")):
-                    handle_uid_query(update, chat_id)
-
+            if is_admin(user_id) and msg.get("forward_from"):
+                handle_uid_query(update, chat_id)
+    
             # panel waiting input
             if is_admin(user_id) and text:
                 if handle_private_waiting_text(chat_id, user_id, text):
