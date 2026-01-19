@@ -1121,7 +1121,11 @@ def apply_link_moderation(msg: dict) -> bool:
                 "⚠️ 連結違規（第 1 次）\n\n"
                 f"• 用戶：{offender}\n"
                 "• 處置：警告\n"
-                "• 提醒：未加入白名單前請勿發送連結",
+                "• 提醒：未加入白名單前請勿發送連結\n\n"
+                "⚠️ Link violation (1st time)\n\n"
+                f"• User：{offender}\n"
+                "• Disposal：Warning\n"
+                "• Remind：Please do not send the link\n",
                 thread_id=thread_id
             )
             return True
@@ -1135,7 +1139,11 @@ def apply_link_moderation(msg: dict) -> bool:
                 "🔇 連結違規（第 2 次）\n\n"
                 f"• 用戶：{offender}\n"
                 f"• 處置：禁言 {mute_days} 天\n"
-                "• 提醒：未加入白名單前請勿發送連結",
+                "• 提醒：未加入白名單前請勿發送連結\n\n"
+                "🔇 Link violation (2nd time)\n\n"
+                f"• User：{offender}\n"
+                f"• Disposal：mute {mute_days} days\n"
+                "• Remind：Please do not send the link\n",
                 thread_id=thread_id
             )
             return True
@@ -1144,16 +1152,22 @@ def apply_link_moderation(msg: dict) -> bool:
         if action == "ban":
             ban_member(chat_id, user_id)
             action_text = "封鎖"
+            action_text1 = "Ban"
         else:
             kick_member_no_ban(chat_id, user_id)
             action_text = "踢出群組"
+            action_text1 = "kick"
 
         send_message(
             chat_id,
             "⛔ 連結違規（第 3 次）\n\n"
             f"• 用戶：{offender}\n"
             f"• 處置：{action_text}\n"
-            "• 提醒：未加入白名單前請勿發送連結",
+            "• 提醒：未加入白名單前請勿發送連結\n\n"
+            "⛔ Link violation (3rd time)\n\n"
+            f"• User：{offender}\n"
+            f"• Disposal：{action_text1}\n"
+            "• Remind：Please do not send the link",
             thread_id=thread_id
         )
 
