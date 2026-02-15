@@ -1133,7 +1133,7 @@ def apply_link_moderation(msg: dict) -> bool:
         if not settings.get("enabled", True):
             return False
 
-                hit_link = msg_has_link(msg)
+        hit_link = msg_has_link(msg)
         hit_ad = msg_hit_ad_keywords(msg)
 
         if (not hit_link) and (not hit_ad):
