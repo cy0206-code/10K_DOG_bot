@@ -880,6 +880,39 @@ def main_menu():
 
 # ================== Link moderation: detect / whitelist / violations ==================
 LINK_REGEX = re.compile(r"(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|discord\.gg/)", re.I)
+# ===== 廣告關鍵字（全域固定版）=====
+AD_KEYWORDS = [
+    "极客", "跟丹","高返用","进群"
+]
+
+def _norm_text(s: str) -> str:
+    s = (s or "").lower()
+    # 去掉空白與零寬字元（廣告常用拆字）
+    s = re.sub(r"[\s\u200b\u200c\u200d\ufeff]+", "", s)
+    s = s.replace("_", "").replace("-", "").replace(".", "")
+    return s
+
+def msg_hit_ad_keywords(msg: dict) -> bool:
+    if not isinstance(msg, dict):
+        return False
+
+    text = (msg.get("text") or msg.get("caption") or "")
+    if not text:
+        return False
+
+    raw = text.lower()
+    norm = _norm_text(text)
+
+    for kw in AD_KEYWORDS:
+        k_raw = kw.lower()
+        k_norm = _norm_text(kw)
+
+        if k_raw in raw:
+            return True
+        if k_norm and k_norm in norm:
+            return True
+
+    return False
 
 
 def msg_has_link(msg: dict) -> bool:
@@ -1100,8 +1133,13 @@ def apply_link_moderation(msg: dict) -> bool:
         if not settings.get("enabled", True):
             return False
 
-        if not msg_has_link(msg):
+                hit_link = msg_has_link(msg)
+        hit_ad = msg_hit_ad_keywords(msg)
+
+        if (not hit_link) and (not hit_ad):
             return False
+
+        reason = "連結" if hit_link else "廣告關鍵字"
 
         if should_bypass_link_rule(chat_id, user_id):
             return False
@@ -1118,7 +1156,7 @@ def apply_link_moderation(msg: dict) -> bool:
         if count == 1:
             send_message(
                 chat_id,
-                "⚠️ 連結違規（第 1 次）\n\n"
+                f"⚠️ {reason}違規（第 1 次）\n\n"
                 f"• 用戶：{offender}\n"
                 "• 處置：警告\n"
                 "• 提醒：未加入白名單前請勿發送連結\n\n"
@@ -1136,7 +1174,7 @@ def apply_link_moderation(msg: dict) -> bool:
             restrict_member(chat_id, user_id, until_ts=until_ts)
             send_message(
                 chat_id,
-                "🔇 連結違規（第 2 次）\n\n"
+                f"🔇 {reason}違規（第 2 次）\n\n"
                 f"• 用戶：{offender}\n"
                 f"• 處置：禁言 {mute_days} 天\n"
                 "• 提醒：未加入白名單前請勿發送連結\n\n"
@@ -1160,7 +1198,7 @@ def apply_link_moderation(msg: dict) -> bool:
 
         send_message(
             chat_id,
-            "⛔ 連結違規（第 3 次）\n\n"
+            f"⛔ {reason}違規（第 3 次）\n\n"
             f"• 用戶：{offender}\n"
             f"• 處置：{action_text}\n"
             "• 提醒：未加入白名單前請勿發送連結\n\n"
