@@ -1159,11 +1159,11 @@ def apply_link_moderation(msg: dict) -> bool:
                 f"⚠️ {reason}違規（第 1 次）\n\n"
                 f"• 用戶：{offender}\n"
                 "• 處置：警告\n"
-                "• 提醒：未加入白名單前請勿發送連結\n\n"
+                "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
                 "⚠️ Link violation (1st time)\n\n"
                 f"• User：{offender}\n"
                 "• Disposal：Warning\n"
-                "• Remind：Please do not send the link\n",
+                "• Remind：Don't send links and advertisements.\n",
                 thread_id=thread_id
             )
             return True
@@ -1177,11 +1177,11 @@ def apply_link_moderation(msg: dict) -> bool:
                 f"🔇 {reason}違規（第 2 次）\n\n"
                 f"• 用戶：{offender}\n"
                 f"• 處置：禁言 {mute_days} 天\n"
-                "• 提醒：未加入白名單前請勿發送連結\n\n"
+                "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
                 "🔇 Link violation (2nd time)\n\n"
                 f"• User：{offender}\n"
                 f"• Disposal：mute {mute_days} days\n"
-                "• Remind：Please do not send the link\n",
+                "• Remind：Don't send links and advertisements.\n",
                 thread_id=thread_id
             )
             return True
@@ -1201,11 +1201,11 @@ def apply_link_moderation(msg: dict) -> bool:
             f"⛔ {reason}違規（第 3 次）\n\n"
             f"• 用戶：{offender}\n"
             f"• 處置：{action_text}\n"
-            "• 提醒：未加入白名單前請勿發送連結\n\n"
+            "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
             "⛔ Link violation (3rd time)\n\n"
             f"• User：{offender}\n"
             f"• Disposal：{action_text1}\n"
-            "• Remind：Please do not send the link",
+            "• Remind：Don't send links and advertisements.",
             thread_id=thread_id
         )
 
