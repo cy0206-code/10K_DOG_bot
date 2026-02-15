@@ -882,7 +882,7 @@ def main_menu():
 LINK_REGEX = re.compile(r"(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|discord\.gg/)", re.I)
 # ===== 廣告關鍵字（全域固定版）=====
 AD_KEYWORDS = [
-    "极客", "跟丹","高返用","进群","進群",
+    "极客", "跟丹","高返用","进群","進群","头像",
 ]
 
 def _norm_text(s: str) -> str:
@@ -2004,9 +2004,10 @@ def webhook():
             answer_callback(cb["id"])
             return "OK"
 
-        # Messages
-        if "message" in update:
-            msg = update["message"]
+        # Messages (包含 edited_message)
+        msg_key = "message" if "message" in update else ("edited_message" if "edited_message" in update else None)
+        if msg_key:
+            msg = update[msg_key]
             chat_id = msg["chat"]["id"]
             user_id = (msg.get("from") or {}).get("id")
             is_private = not str(chat_id).startswith("-100")
@@ -2171,8 +2172,8 @@ def webhook():
                     try_flush_dirty(force=False)
                     return "OK"
 
-            # Normal user commands / callbacks from menu
-            if text:
+            # Normal user commands (只處理新訊息，不處理 edited_message)
+            if msg_key == "message" and text:
                 handle_user_command(text, chat_id, is_private, update)
 
             try_flush_dirty(force=False)
