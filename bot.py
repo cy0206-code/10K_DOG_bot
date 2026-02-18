@@ -882,7 +882,7 @@ def main_menu():
 LINK_REGEX = re.compile(r"(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|discord\.gg/)", re.I)
 # ===== 廣告關鍵字（全域固定版）=====
 AD_KEYWORDS = [
-    "极客", "跟丹","高返用","进群","進群","头像",
+    "极客", "跟丹","高返用","进群","進群","头像","主页","内部群",
 ]
 
 def _norm_text(s: str) -> str:
