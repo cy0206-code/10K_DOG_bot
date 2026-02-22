@@ -1140,6 +1140,7 @@ def apply_link_moderation(msg: dict) -> bool:
             return False
 
         reason = "連結" if hit_link else "廣告關鍵字"
+        reason1 = "link" if hit_link else "advertisements"
 
         if should_bypass_link_rule(chat_id, user_id):
             return False
@@ -1156,14 +1157,14 @@ def apply_link_moderation(msg: dict) -> bool:
         if count == 1:
             send_message(
                 chat_id,
-                f"⚠️ {reason}違規（第 1 次）\n\n"
+                f"⚠️ {reason}違規（第 1 次）\n"
                 f"• 用戶：{offender}\n"
                 "• 處置：警告\n"
-                "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
-                "⚠️ Link violation (1st time)\n\n"
+                f"• 請勿發送{reason}。\n\n"
+                f"⚠️ {reason1} violation (1st)\n"
                 f"• User：{offender}\n"
                 "• Disposal：Warning\n"
-                "• Remind：Don't send links and advertisements.\n",
+                f"• Don't send {reason1}.\n",
                 thread_id=thread_id
             )
             return True
@@ -1174,14 +1175,14 @@ def apply_link_moderation(msg: dict) -> bool:
             restrict_member(chat_id, user_id, until_ts=until_ts)
             send_message(
                 chat_id,
-                f"🔇 {reason}違規（第 2 次）\n\n"
+                f"🔇 {reason}違規（第 2 次）\n"
                 f"• 用戶：{offender}\n"
                 f"• 處置：禁言 {mute_days} 天\n"
-                "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
-                "🔇 Link violation (2nd time)\n\n"
+                f"• 請勿發送{reason}。\n\n"
+                f"🔇 {reason1} violation (2nd)\n"
                 f"• User：{offender}\n"
                 f"• Disposal：mute {mute_days} days\n"
-                "• Remind：Don't send links and advertisements.\n",
+                f"• Don't send {reason1}.\n",
                 thread_id=thread_id
             )
             return True
@@ -1198,14 +1199,14 @@ def apply_link_moderation(msg: dict) -> bool:
 
         send_message(
             chat_id,
-            f"⛔ {reason}違規（第 3 次）\n\n"
+            f"⛔ {reason}違規（第 3 次）\n"
             f"• 用戶：{offender}\n"
             f"• 處置：{action_text}\n"
-            "• 提醒：未加入白名單，請勿發送連結、廣告。\n\n"
-            "⛔ Link violation (3rd time)\n\n"
+            f"• 請勿發送{reason}。\n\n"
+            f"⛔ {reason1} violation (3rd)\n"
             f"• User：{offender}\n"
             f"• Disposal：{action_text1}\n"
-            "• Remind：Don't send links and advertisements.",
+            f"• Don't send {reason1}.",
             thread_id=thread_id
         )
 
