@@ -1157,14 +1157,10 @@ def apply_link_moderation(msg: dict) -> bool:
         if count == 1:
             send_message(
                 chat_id,
-                f"⚠️ {reason}違規（第 1 次）\n"
-                f"• 用戶：{offender}\n"
-                "• 處置：警告\n"
-                f"• 請勿發送{reason}。\n\n"
-                f"⚠️ {reason1} violation (1st)\n"
-                f"• User：{offender}\n"
-                "• Disposal：Warning\n"
-                f"• Don't send {reason1}.\n",
+                f"⚠️ {reason}違規({reason1} violation)-1st\n"
+                f"• 用戶(User)：{offender}\n"
+                "• 處置(Disposal)：警告(Warning)\n"
+                f"• 請勿發送{reason}。(Don't send {reason1}.)"
                 thread_id=thread_id
             )
             return True
@@ -1175,14 +1171,10 @@ def apply_link_moderation(msg: dict) -> bool:
             restrict_member(chat_id, user_id, until_ts=until_ts)
             send_message(
                 chat_id,
-                f"🔇 {reason}違規（第 2 次）\n"
-                f"• 用戶：{offender}\n"
-                f"• 處置：禁言 {mute_days} 天\n"
-                f"• 請勿發送{reason}。\n\n"
-                f"🔇 {reason1} violation (2nd)\n"
-                f"• User：{offender}\n"
-                f"• Disposal：mute {mute_days} days\n"
-                f"• Don't send {reason1}.\n",
+                f"🔇 {reason}違規({reason1} violation)-2nd\n"
+                f"• 用戶(User)：{offender}\n"
+                f"• 處置(Disposal)：禁言 {mute_days} 天(mute {mute_days} days)\n"
+                f"• 請勿發送{reason}。(Don't send {reason1}.)"
                 thread_id=thread_id
             )
             return True
@@ -1199,14 +1191,10 @@ def apply_link_moderation(msg: dict) -> bool:
 
         send_message(
             chat_id,
-            f"⛔ {reason}違規（第 3 次）\n"
-            f"• 用戶：{offender}\n"
-            f"• 處置：{action_text}\n"
-            f"• 請勿發送{reason}。\n\n"
-            f"⛔ {reason1} violation (3rd)\n"
-            f"• User：{offender}\n"
-            f"• Disposal：{action_text1}\n"
-            f"• Don't send {reason1}.",
+            f"⛔ {reason}違規({reason1} violation)-3rd\n"
+            f"• 用戶(User)：{offender}\n"
+            f"• 處置(Disposal)：{action_text}({action_text1})\n"
+            f"• 請勿發送{reason}。(Don't send {reason1}.)"
             thread_id=thread_id
         )
 
