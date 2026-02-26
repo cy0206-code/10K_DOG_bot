@@ -2164,7 +2164,14 @@ def webhook():
 
             # Normal user commands (只處理新訊息，不處理 edited_message)
             if msg_key == "message" and text:
-                handle_user_command(text, chat_id, is_private, update)
+                if is_private and user_id and is_admin(int(user_id)):
+                    # ✅ 先處理 /admin 面板
+                    handle_admin_command(text, chat_id, int(user_id))
+                    # 若是 /admin 就直接結束，避免落到一般指令
+                    if normalize_cmd(text) == "/admin":
+                        try_flush_dirty(force=False)
+                        return "OK"
+            handle_user_command(text, chat_id, is_private, update)
 
             try_flush_dirty(force=False)
             return "OK"
