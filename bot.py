@@ -1140,8 +1140,8 @@ def apply_link_moderation(msg: dict) -> bool:
         if (not hit_link) and (not hit_ad):
             return False
 
-        reason = "連結" if hit_link else "廣告關鍵字"
-        reason1 = "link" if hit_link else "advertisements"
+        reason = "連結" if hit_link else "廣告"
+        reason1 = "link" if hit_link else "AD"
 
         if should_bypass_link_rule(chat_id, user_id):
             return False
