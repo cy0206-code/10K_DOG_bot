@@ -1161,7 +1161,7 @@ def apply_link_moderation(msg: dict) -> bool:
                 f"⚠️ {reason}違規({reason1} violation)-1st\n"
                 f"• 用戶(User)：{offender}\n"
                 "• 處置(Disposal)：警告(Warning)\n"
-                f"• 請勿發送{reason}。(Don't send {reason1}.)"
+                f"• 請勿發送{reason}。(Don't send {reason1}.)",
                 thread_id=thread_id
             )
             return True
@@ -1175,7 +1175,7 @@ def apply_link_moderation(msg: dict) -> bool:
                 f"🔇 {reason}違規({reason1} violation)-2nd\n"
                 f"• 用戶(User)：{offender}\n"
                 f"• 處置(Disposal)：禁言 {mute_days} 天(mute {mute_days} days)\n"
-                f"• 請勿發送{reason}。(Don't send {reason1}.)"
+                f"• 請勿發送{reason}。(Don't send {reason1}.)",
                 thread_id=thread_id
             )
             return True
@@ -1195,7 +1195,7 @@ def apply_link_moderation(msg: dict) -> bool:
             f"⛔ {reason}違規({reason1} violation)-3rd\n"
             f"• 用戶(User)：{offender}\n"
             f"• 處置(Disposal)：{action_text}({action_text1})\n"
-            f"• 請勿發送{reason}。(Don't send {reason1}.)"
+            f"• 請勿發送{reason}。(Don't send {reason1}.)",
             thread_id=thread_id
         )
 
